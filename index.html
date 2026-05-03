@@ -1,0 +1,3430 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigiPlot — Automatic Plot Data Extractor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+:root {
+  --paper: #f5f1e8;
+  --paper-2: #ebe5d4;
+  --ink: #1a1611;
+  --ink-2: #4a3f2e;
+  --ink-3: #7a6e58;
+  --rule: #8a7d62;
+  --rule-2: #c8b994;
+  --accent: #b4441f;
+  --accent-2: #2d5e3e;
+  --accent-3: #4a6b8a;
+  --highlight: #e8c547;
+  --serif: 'Fraunces', Georgia, serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--paper);
+  background-image:
+    radial-gradient(circle at 20% 10%, rgba(180, 68, 31, 0.04) 0%, transparent 40%),
+    radial-gradient(circle at 80% 80%, rgba(45, 94, 62, 0.04) 0%, transparent 40%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 23px, rgba(138, 125, 98, 0.04) 23px, rgba(138, 125, 98, 0.04) 24px);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-feature-settings: "ss01", "ss02";
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* ======================== HEADER ======================== */
+header.masthead {
+  border-bottom: 3px double var(--ink);
+  padding: 32px 48px 24px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
+  gap: 32px;
+  position: relative;
+}
+header.masthead::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -3px 0;
+  border-bottom: 1px solid var(--ink);
+  margin-bottom: 6px;
+}
+.masthead-left {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.masthead-left .vol {
+  font-weight: 700;
+  color: var(--ink);
+}
+.masthead-title {
+  text-align: center;
+  position: relative;
+}
+.masthead-title h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(48px, 6vw, 88px);
+  letter-spacing: -2px;
+  line-height: 0.9;
+  font-style: italic;
+  color: var(--ink);
+}
+.masthead-title h1 .amp {
+  color: var(--accent);
+  font-weight: 700;
+}
+.masthead-title .sub {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.masthead-right {
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  line-height: 1.5;
+}
+.masthead-right .price {
+  font-size: 22px;
+  font-weight: 700;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink);
+  display: block;
+  letter-spacing: -1px;
+}
+
+/* ======================== STAGE NAV ======================== */
+.stage-rail {
+  display: flex;
+  border-bottom: 1px solid var(--rule);
+  padding: 0 48px;
+  background: var(--paper-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  overflow-x: auto;
+}
+.stage-step {
+  padding: 18px 28px;
+  border-right: 1px solid var(--rule-2);
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.stage-step .num {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+}
+.stage-step.done {
+  color: var(--accent-2);
+}
+.stage-step.done .num {
+  background: var(--accent-2);
+  color: var(--paper);
+  border-color: var(--accent-2);
+}
+.stage-step.active {
+  color: var(--ink);
+  background: var(--paper);
+  font-weight: 700;
+}
+.stage-step.active .num {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+/* ======================== MAIN ======================== */
+main {
+  padding: 48px 48px 80px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+}
+.section-head .num {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.section-head h2 {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 32px;
+  letter-spacing: -0.5px;
+}
+.section-head .desc {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  letter-spacing: 1px;
+}
+
+/* ======================== UPLOAD ======================== */
+.upload-zone {
+  border: 2px dashed var(--rule);
+  background: var(--paper-2);
+  padding: 80px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all .2s;
+  position: relative;
+  overflow: hidden;
+}
+.upload-zone::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1px solid var(--rule-2);
+  pointer-events: none;
+}
+.upload-zone:hover, .upload-zone.drag {
+  background: var(--paper);
+  border-color: var(--accent);
+}
+.upload-zone .label {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 36px;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.upload-zone .hint {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.upload-zone .icon {
+  font-size: 56px;
+  margin-bottom: 16px;
+  font-family: var(--serif);
+  color: var(--accent);
+  font-style: italic;
+}
+
+/* ======================== IMAGE GALLERY ======================== */
+.gallery-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.gallery-bar .filename {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+}
+.image-tile {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-2);
+  cursor: pointer;
+  transition: all .15s;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.image-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.image-tile.selected {
+  border-color: var(--accent);
+  border-width: 2px;
+  box-shadow: 6px 6px 0 var(--accent);
+}
+.image-tile .thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--rule-2);
+  overflow: hidden;
+}
+.image-tile .thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.image-tile .meta {
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  justify-content: space-between;
+  background: var(--paper);
+}
+.image-tile .meta .badge {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 2px 6px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+}
+.image-tile .meta .badge.is-plot {
+  background: var(--accent-2);
+}
+
+/* ======================== EXTRACTION WORKSPACE ======================== */
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 28px;
+  align-items: start;
+}
+.workspace-canvas-wrap {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: 18px;
+  position: sticky;
+  top: 24px;
+}
+.workspace-canvas {
+  width: 100%;
+  display: block;
+  background: #fff;
+  border: 1px solid var(--rule-2);
+  cursor: crosshair;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+}
+.workspace-canvas-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+.workspace-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ======================== PANELS ======================== */
+.panel {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  position: relative;
+}
+.panel::before {
+  content: "";
+  position: absolute;
+  top: -1px; left: -1px; right: -1px; bottom: -1px;
+  border: 1px solid var(--ink);
+  pointer-events: none;
+  opacity: 0.08;
+}
+.panel-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  background: var(--paper);
+}
+.panel-head .num {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+.panel-head h3 {
+  font-family: var(--serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 19px;
+  letter-spacing: -0.3px;
+}
+.panel-body {
+  padding: 14px 16px;
+}
+.panel-body p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* ======================== AUTO-DETECT STATUS ======================== */
+.detect-status {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  align-items: baseline;
+}
+.detect-status dt {
+  color: var(--ink-3);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+.detect-status dd {
+  color: var(--ink);
+}
+.detect-status dd .ok { color: var(--accent-2); }
+.detect-status dd .warn { color: var(--accent); }
+
+/* ======================== CURVES LIST ======================== */
+.curves-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.curve-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  transition: all .15s;
+  cursor: pointer;
+}
+.curve-row:hover {
+  border-color: var(--ink);
+}
+.curve-row .info {
+  flex: 1;
+  min-width: 0;
+}
+.curve-row.disabled {
+  opacity: 0.4;
+}
+.curve-row.active {
+  background: var(--paper-2);
+  border-color: var(--ink);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.curve-row .swatch {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  cursor: pointer;
+}
+.curve-row .info {
+  min-width: 0;
+}
+.curve-row .info .name {
+  display: block;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.curve-row .info .stats {
+  font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.curve-row .pts {
+  font-weight: 700;
+  color: var(--ink);
+}
+.curve-row .toggle {
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--ink-3);
+  padding: 4px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.curve-row .toggle:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+/* ======================== AXIS CALIBRATION ======================== */
+.axis-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.field input, .field select {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 7px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  outline: none;
+  transition: border-color .15s;
+}
+.field input:focus, .field select:focus {
+  border-color: var(--accent);
+}
+.field-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+}
+
+/* ======================== BUTTONS ======================== */
+.btn {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  padding: 10px 18px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all .15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.btn.btn-outline {
+  background: transparent;
+  color: var(--ink);
+}
+.btn.btn-outline:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.btn.btn-accent:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.btn.btn-ghost {
+  background: transparent;
+  border-color: var(--rule);
+  color: var(--ink-2);
+}
+.btn.btn-ghost:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.btn.btn-sm {
+  padding: 6px 12px;
+  font-size: 10px;
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ======================== DATA TABLE ======================== */
+.data-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--rule-2);
+  background: var(--paper);
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 10px;
+  text-align: left;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.data-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule-2);
+  color: var(--ink);
+}
+.data-table tr:hover td {
+  background: var(--paper-2);
+}
+
+/* ======================== TOAST ======================== */
+.toast-stack {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 360px;
+}
+.toast {
+  background: var(--ink);
+  color: var(--paper);
+  padding: 14px 18px;
+  border-left: 4px solid var(--highlight);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  box-shadow: 4px 4px 0 var(--rule);
+  animation: toast-in 0.2s ease-out;
+}
+.toast.ok { border-left-color: var(--accent-2); }
+.toast.err { border-left-color: var(--accent); }
+.toast.warn { border-left-color: var(--highlight); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ======================== LOADING OVERLAY ======================== */
+.loading {
+  position: fixed;
+  inset: 0;
+  background: rgba(245, 241, 232, 0.92);
+  backdrop-filter: blur(4px);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+.loading .pulse {
+  width: 64px;
+  height: 64px;
+  border: 2px solid var(--ink);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+.loading .text {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--ink);
+}
+.loading .sub {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ======================== FOOTER ======================== */
+footer.colophon {
+  border-top: 3px double var(--ink);
+  padding: 32px 48px;
+  margin-top: 48px;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ======================== UTIL ======================== */
+.empty-state {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--ink-3);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 18px;
+}
+.hidden { display: none !important; }
+
+/* Mode buttons (curve interaction) */
+.mode-bar {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  margin-bottom: 12px;
+}
+.mode-bar button {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--rule);
+  padding: 10px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--ink-3);
+  transition: all .15s;
+}
+.mode-bar button strong {
+  color: var(--accent);
+  font-weight: 700;
+  margin-right: 4px;
+  font-family: var(--mono);
+}
+.mode-bar button:last-child { border-right: none; }
+.mode-bar button:hover { color: var(--ink); background: var(--paper-2); }
+.mode-bar button.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.mode-bar button.active strong {
+  color: var(--highlight);
+}
+
+/* ======================== TABS ======================== */
+.tabs-bar {
+  display: flex;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 24px;
+  margin-top: 8px;
+}
+.tabs-bar .tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 12px 22px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: var(--ink-3);
+  transition: all .15s;
+  margin-bottom: -1px;
+}
+.tabs-bar .tab:hover { color: var(--ink); }
+.tabs-bar .tab.active {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 700;
+}
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+.tab-hint {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-3);
+  margin-bottom: 18px;
+  max-width: 720px;
+}
+
+/* ======================== PAGE GRID ======================== */
+.page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 22px;
+}
+.page-tile {
+  background: var(--paper-2);
+  border: 1px solid var(--rule-2);
+  cursor: pointer;
+  transition: all .15s;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.page-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+.page-tile .page-preview {
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 1px solid var(--rule-2);
+  padding: 10px;
+  min-height: 280px;
+}
+.page-tile .page-preview img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.page-tile .meta {
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  justify-content: space-between;
+  background: var(--paper);
+}
+.page-tile .meta .num {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ======================== CROPPER ======================== */
+.cropper-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 28px;
+  align-items: start;
+}
+.cropper-canvas-wrap {
+  background: var(--paper-2);
+  border: 1px solid var(--rule);
+  padding: 18px;
+  position: relative;
+  overflow: auto;
+  max-height: 80vh;
+}
+#cropper-canvas {
+  display: block;
+  background: #fff;
+  border: 1px solid var(--rule-2);
+  cursor: crosshair;
+  max-width: 100%;
+  height: auto;
+}
+.cropper-side {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  position: sticky;
+  top: 24px;
+}
+
+@media (max-width: 1100px) {
+  .workspace { grid-template-columns: 1fr; }
+  .workspace-canvas-wrap { position: static; }
+  .cropper-wrap { grid-template-columns: 1fr; }
+  .cropper-side { position: static; }
+  header.masthead { padding: 24px; grid-template-columns: 1fr; gap: 12px; text-align: center; }
+  .masthead-left, .masthead-right { text-align: center; }
+  main { padding: 32px 20px; }
+  .stage-rail { padding: 0 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ======================== HEADER ======================== -->
+<header class="masthead">
+  <div class="masthead-left">
+    <div>Vol. I &nbsp;·&nbsp; No. 1</div>
+    <div>Browser-resident</div>
+    <div class="vol">No upload to server</div>
+  </div>
+  <div class="masthead-title">
+    <h1>Digi<span class="amp">&amp;</span>Plot</h1>
+
+    <div class="sub"><strong><em>_____________By Mohammad Irfan Yattoo</em></strong></div>
+  </div>
+  <div class="masthead-right">
+    <span class="price">Free</span>
+    <div>Single-file</div>
+    <div>Offline-capable</div>
+  </div>
+</header>
+
+<!-- ======================== STAGE RAIL ======================== -->
+<nav class="stage-rail" id="stage-rail">
+  <div class="stage-step active" data-stage="upload"><span class="num">1</span> Upload</div>
+  <div class="stage-step" data-stage="gallery"><span class="num">2</span> Choose Image</div>
+  <div class="stage-step" data-stage="extract"><span class="num">3</span> Auto-Extract</div>
+  <div class="stage-step" data-stage="export"><span class="num">4</span> Export</div>
+</nav>
+
+<!-- ======================== MAIN ======================== -->
+<main>
+
+  <!-- STAGE 1: UPLOAD -->
+  <section id="stage-upload">
+    <div class="section-head">
+      <span class="num">§ 01</span>
+      <h2>Upload a PDF document</h2>
+      <span class="desc">Files stay in your browser</span>
+    </div>
+    <div class="upload-zone" id="upload-zone" tabindex="0">
+      <div class="icon">↑</div>
+      <div class="label">Drop your PDF here</div>
+      <div class="hint">or click to browse · multi-page supported</div>
+    </div>
+    <input type="file" id="file-input" accept=".pdf" style="display:none">
+
+    <div style="margin-top: 32px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px;">
+      <div class="panel">
+        <div class="panel-head"><span class="num">A</span><h3>Identify</h3></div>
+        <div class="panel-body"><p>Every embedded image and rendered figure is pulled out of the PDF and shown as a thumbnail. You pick the chart you want.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="num">B</span><h3>Auto-trace</h3></div>
+        <div class="panel-body"><p>Plot box, axis ticks, and curves are detected automatically. Each curve gets traced in its own colour. No manual clicking needed.</p></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><span class="num">C</span><h3>Export</h3></div>
+        <div class="panel-body"><p>Confirm or fine-tune the result, then download a tidy CSV with one column per curve, ready for analysis.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAGE 2: GALLERY -->
+  <section id="stage-gallery" class="hidden">
+    <div class="section-head">
+      <span class="num">§ 02</span>
+      <h2>Pick a plot to extract</h2>
+      <span class="desc" id="gallery-count">0 images</span>
+    </div>
+    <div class="gallery-bar">
+      <span>Source:</span>
+      <span class="filename" id="gallery-filename">—</span>
+      <button class="btn btn-ghost btn-sm" id="btn-back-upload">← Different PDF</button>
+    </div>
+
+    <div class="tabs-bar" id="gallery-tabs">
+      <button class="tab active" data-tab="auto">Auto-detected images</button>
+      <button class="tab" data-tab="pages">Browse pages &amp; crop</button>
+    </div>
+
+    <!-- Tab 1: auto-detected -->
+    <div class="tab-pane active" id="tab-auto">
+      <p class="tab-hint">Every embedded raster image and vector-drawn chart pulled from the PDF. Click any to extract.</p>
+      <div class="image-grid" id="image-grid"></div>
+    </div>
+
+    <!-- Tab 2: page browser -->
+    <div class="tab-pane" id="tab-pages">
+      <p class="tab-hint">Use this when a figure contains multiple sub-plots and you want to crop just one. Click a page to open the cropper.</p>
+      <div class="page-grid" id="page-grid"></div>
+    </div>
+  </section>
+
+  <!-- STAGE 2.5: CROP -->
+  <section id="stage-crop" class="hidden">
+    <div class="section-head">
+      <span class="num">§ 02·b</span>
+      <h2>Crop the plot region</h2>
+      <span class="desc" id="crop-status">Drag on the page to select</span>
+    </div>
+    <div class="gallery-bar">
+      <button class="btn btn-ghost btn-sm" id="btn-back-pages">← Back to pages</button>
+    </div>
+    <div class="cropper-wrap">
+      <div class="cropper-canvas-wrap" id="cropper-canvas-wrap">
+        <canvas id="cropper-canvas"></canvas>
+      </div>
+      <div class="cropper-side">
+        <div class="panel">
+          <div class="panel-head"><span class="num">·</span><h3>Selection</h3></div>
+          <div class="panel-body">
+            <p style="font-size: 13px; color: var(--ink-3); margin-bottom: 12px;">Drag a rectangle around a single chart. The selection should include the axis tick labels too — those help us read your data values automatically.</p>
+            <div class="axis-fields">
+              <div class="field"><label>X (px)</label><input id="crop-x" type="number"></div>
+              <div class="field"><label>Y (px)</label><input id="crop-y" type="number"></div>
+              <div class="field"><label>Width</label><input id="crop-w" type="number"></div>
+              <div class="field"><label>Height</label><input id="crop-h" type="number"></div>
+            </div>
+            <div class="btn-row" style="margin-top: 14px;">
+              <button class="btn btn-accent" id="btn-confirm-crop">Use this region</button>
+              <button class="btn btn-ghost btn-sm" id="btn-clear-crop">Clear</button>
+            </div>
+            <p style="margin-top: 12px; font-size: 11px; color: var(--ink-3);">
+              Tip: hold <strong>Shift</strong> to constrain to a square. Drag inside an existing selection to move it; drag a corner to resize.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STAGE 3: EXTRACT -->
+  <section id="stage-extract" class="hidden">
+    <div class="section-head">
+      <span class="num">§ 03</span>
+      <h2>Automatic extraction</h2>
+      <span class="desc" id="extract-status">—</span>
+    </div>
+
+    <div class="workspace">
+      <div class="workspace-canvas-wrap">
+        <div class="mode-bar" id="mode-bar">
+          <button data-mode="pick" class="active" title="Click a curve to extract it (key 1)"><strong>1.</strong> Pick curve</button>
+          <button data-mode="add" title="Click on a curve to add a single point at that location (key 2)"><strong>2.</strong> Add point</button>
+          <button data-mode="erase" title="Click a stray point to delete it (key 3)"><strong>3.</strong> Erase point</button>
+          <button data-mode="lasso" title="Drag a region to delete all points inside (key 4)"><strong>4.</strong> Lasso erase</button>
+        </div>
+        <canvas id="extract-canvas" class="workspace-canvas"></canvas>
+        <div class="workspace-canvas-controls">
+          <span id="canvas-info">—</span>
+          <span id="mode-hint">Click any curve on the chart to extract it</span>
+        </div>
+      </div>
+
+      <div class="workspace-side">
+        <div class="panel">
+          <div class="panel-head"><span class="num">i</span><h3>What was detected</h3></div>
+          <div class="panel-body">
+            <dl class="detect-status" id="detect-status"></dl>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="num">ii</span><h3>Axis calibration</h3></div>
+          <div class="panel-body">
+            <p style="margin-bottom: 10px; font-size: 12px; color: var(--ink-3);">
+              Two ways to calibrate. Manual is the most accurate for tricky charts.
+            </p>
+
+            <!-- Manual calibration -->
+            <div style="border: 1px solid var(--rule-2); padding: 10px; background: var(--paper); margin-bottom: 12px;">
+              <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; font-weight: 700;">
+                ◉ Manual — 4 reference points
+              </div>
+              <p style="font-size: 11px; color: var(--ink-3); margin-bottom: 10px;">
+                Click "Calibrate" then click 4 points on the chart in this order:
+                <strong style="color:var(--accent)">X1</strong>, <strong style="color:var(--accent)">X2</strong> (two known X positions on the X-axis),
+                then <strong style="color:var(--accent-3)">Y1</strong>, <strong style="color:var(--accent-3)">Y2</strong> (two known Y positions on the Y-axis).
+              </p>
+              <button class="btn btn-accent btn-sm" id="btn-start-calibrate" style="width: 100%; margin-bottom: 10px;">Start manual calibration</button>
+              <div id="calibrate-progress" style="display:none; font-family: var(--mono); font-size: 11px; color: var(--ink-2); padding: 8px; background: var(--paper-2); border: 1px dashed var(--accent); margin-bottom: 10px;"></div>
+              <div id="calibrate-values" style="display:none;">
+                <div class="axis-fields">
+                  <div class="field"><label>X1 value</label><input id="cal-x1v" type="number" step="any"></div>
+                  <div class="field"><label>X2 value</label><input id="cal-x2v" type="number" step="any"></div>
+                  <div class="field"><label>Y1 value</label><input id="cal-y1v" type="number" step="any"></div>
+                  <div class="field"><label>Y2 value</label><input id="cal-y2v" type="number" step="any"></div>
+                </div>
+                <div class="btn-row" style="margin-top: 10px;">
+                  <button class="btn btn-sm" id="btn-apply-calibrate">Apply calibration</button>
+                  <button class="btn btn-ghost btn-sm" id="btn-clear-calibrate">Clear</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Edge-based -->
+            <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px;">
+              Edge-based — auto-read from PDF text
+            </div>
+            <div class="axis-fields">
+              <div class="field"><label>X axis label</label><input id="ax-xlabel"></div>
+              <div class="field"><label>Y axis label</label><input id="ax-ylabel"></div>
+              <div class="field"><label>X min (left edge)</label><input id="ax-xmin" type="number" step="any"></div>
+              <div class="field"><label>X max (right edge)</label><input id="ax-xmax" type="number" step="any"></div>
+              <div class="field"><label>Y min (bottom)</label><input id="ax-ymin" type="number" step="any"></div>
+              <div class="field"><label>Y max (top)</label><input id="ax-ymax" type="number" step="any"></div>
+            </div>
+            <div style="margin-top: 10px; display: flex; gap: 16px;">
+              <label class="field-checkbox"><input type="checkbox" id="ax-xlog"> X log</label>
+              <label class="field-checkbox"><input type="checkbox" id="ax-ylog"> Y log</label>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-recompute" style="margin-top: 12px; width: 100%;">Recompute with these edges</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="num">iii</span><h3>Detected curves</h3></div>
+          <div class="panel-body">
+            <div class="curves-list" id="curves-list"></div>
+            <div class="btn-row" style="margin-top: 10px;">
+              <button class="btn btn-ghost btn-sm" id="btn-retrace">Re-trace all</button>
+              <button class="btn btn-ghost btn-sm" id="btn-add-curve">Add color manually</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="num">iv</span><h3>Export</h3></div>
+          <div class="panel-body">
+            <div class="btn-row">
+              <button class="btn btn-accent" id="btn-export-csv">Download CSV</button>
+              <button class="btn btn-outline" id="btn-export-tsv">Copy TSV</button>
+              <button class="btn btn-outline" id="btn-export-json">JSON</button>
+            </div>
+            <p style="margin-top: 10px; font-size: 11px; color: var(--ink-3);">CSV format: one X column followed by one Y column per curve.</p>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" id="btn-back-gallery">← Pick a different image</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ======================== FOOTER ======================== -->
+<footer class="colophon">
+  <div>Set in Fraunces &amp; JetBrains Mono</div>
+  <div>Runs entirely on your device</div>
+  <div>2026 · v1.0</div>
+</footer>
+
+<!-- ======================== TOAST + LOADING ======================== -->
+<div class="toast-stack" id="toast-stack"></div>
+<div class="loading hidden" id="loading">
+  <div class="pulse"></div>
+  <div class="text" id="loading-text">Working…</div>
+  <div class="sub" id="loading-sub">—</div>
+</div>
+
+<script>
+/* ============================================================
+   DigiPlot — Automatic Plot Data Extractor
+   ============================================================ */
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// -------------------- DOM helpers --------------------
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+
+function toast(msg, kind = 'info', ms = 3500) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind;
+  t.textContent = msg;
+  $('#toast-stack').appendChild(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .25s, transform .25s';
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(20px)';
+    setTimeout(() => t.remove(), 260);
+  }, ms);
+}
+
+function showLoading(text, sub = '') {
+  $('#loading-text').textContent = text;
+  $('#loading-sub').textContent = sub;
+  $('#loading').classList.remove('hidden');
+}
+function hideLoading() {
+  $('#loading').classList.add('hidden');
+}
+
+function setStage(stage) {
+  ['upload', 'gallery', 'crop', 'extract', 'export'].forEach(s => {
+    $('#stage-' + s)?.classList.add('hidden');
+  });
+  $('#stage-' + stage)?.classList.remove('hidden');
+  $$('#stage-rail .stage-step').forEach(el => {
+    el.classList.remove('active', 'done');
+  });
+  // Map crop into the gallery stage on the rail (it's a sub-step of stage 2)
+  const railStage = stage === 'crop' ? 'gallery' : stage;
+  const order = ['upload', 'gallery', 'extract', 'export'];
+  const idx = order.indexOf(railStage);
+  order.forEach((s, i) => {
+    const el = $('#stage-rail .stage-step[data-stage="' + s + '"]');
+    if (!el) return;
+    if (i < idx) el.classList.add('done');
+    if (i === idx) el.classList.add('active');
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function activateGalleryTab(name) {
+  $$('#gallery-tabs .tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.tab === name);
+  });
+  $$('.tab-pane').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + name);
+  });
+}
+
+// -------------------- STATE --------------------
+const State = {
+  pdf: null,
+  filename: '',
+  images: [],          // auto-detected: [{ id, dataUrl, width, height, page, source, label, textsInRegion }]
+  pages: [],           // page browser: [{ page, dataUrl, width, height, textItems, viewport, scale }]
+  selectedImageId: null,
+  cropPage: null,      // page being cropped
+  crop: null,          // { x, y, w, h } in page-canvas pixels
+  extraction: null,
+};
+
+// -------------------- STAGE 1: PDF UPLOAD + IMAGE EXTRACTION --------------------
+
+async function loadPdfFile(file) {
+  State.filename = file.name;
+  $('#gallery-filename').textContent = file.name;
+  showLoading('Reading PDF', file.name);
+  try {
+    const buf = await file.arrayBuffer();
+    State.pdf = await pdfjsLib.getDocument({ data: buf.slice(0) }).promise;
+    showLoading('Rendering pages', `0 / ${State.pdf.numPages}`);
+    State.pages = await renderAllPages(State.pdf);
+    showLoading('Extracting images', `0 / ${State.pdf.numPages}`);
+    State.images = await extractAllImagesFromPdf(State.pdf);
+    if (!State.images.length) {
+      toast('No auto-detected images. Use "Browse pages & crop" to select a region.', 'warn', 5000);
+    }
+    renderImageGallery();
+    renderPageGallery();
+    setStage('gallery');
+  } catch (e) {
+    console.error(e);
+    toast('Failed to read PDF: ' + e.message, 'err', 6000);
+  } finally {
+    hideLoading();
+  }
+}
+
+// Render every page at a high scale for both browsing thumbnails and cropping
+async function renderAllPages(pdf) {
+  const out = [];
+  // 3x for crispness; back off automatically for big PDFs to keep memory reasonable
+  const RENDER_SCALE = pdf.numPages <= 10 ? 3.0 : pdf.numPages <= 30 ? 2.5 : 2.0;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    showLoading('Rendering pages', `${p} / ${pdf.numPages}`);
+    const page = await pdf.getPage(p);
+    const viewport = page.getViewport({ scale: RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    // Capture text positions in canvas pixel coords
+    const tc = await page.getTextContent();
+    const textItems = tc.items.map(it => {
+      const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
+      return {
+        str: it.str,
+        x: tx[4],
+        y: tx[5],
+        height: Math.hypot(tx[2], tx[3]),
+        width: it.width * Math.hypot(tx[0], tx[1]) / Math.hypot(it.transform[0], it.transform[1]) || 0,
+      };
+    });
+    out.push({
+      page: p,
+      canvas,
+      dataUrl: canvas.toDataURL('image/png'),
+      width: canvas.width,
+      height: canvas.height,
+      textItems,
+      scale: RENDER_SCALE,
+    });
+  }
+  return out;
+}
+
+async function extractAllImagesFromPdf(pdf) {
+  // Strategy:
+  // 1. Reuse State.pages (already rendered at scale 3) to avoid double-rendering.
+  // 2. Walk the operator list to find image XObjects (paintImageXObject) and
+  //    figure regions defined by drawing ops + clipping boxes.
+  // 3. Also detect "vector-drawn plots": large bounding boxes that contain
+  //    many strokes (typical matplotlib output). For these, crop the page
+  //    region to a separate image.
+  // 4. Capture the PDF text positions so we can correlate axis labels later.
+  const out = [];
+  let imgCounter = 0;
+  for (let p = 1; p <= pdf.numPages; p++) {
+    showLoading('Extracting images', `Page ${p} / ${pdf.numPages}`);
+    const page = await pdf.getPage(p);
+    const renderedPage = State.pages[p - 1];
+    const viewport = page.getViewport({ scale: renderedPage.scale });
+    const pageCanvas = renderedPage.canvas;
+
+    // Get text content with positions for axis-label inference later
+    const textContent = await page.getTextContent();
+    const textItems = textContent.items.map(it => {
+      const tx = pdfjsLib.Util.transform(viewport.transform, it.transform);
+      // tx = [a,b,c,d,e,f]; pixel x = e, pixel y = f, font height = sqrt(a*a+b*b)
+      const fontHeight = Math.hypot(tx[2], tx[3]);
+      return {
+        str: it.str,
+        x: tx[4],
+        y: tx[5],
+        height: fontHeight,
+        width: it.width * Math.hypot(tx[0], tx[1]) / Math.hypot(it.transform[0], it.transform[1]) || 0,
+      };
+    });
+
+    // Walk the operator list to find painted images and vector-drawn regions
+    const ops = await page.getOperatorList();
+    const fnList = ops.fnArray;
+    const argsList = ops.argsArray;
+
+    // Track CTM stack to determine where images are placed
+    const stack = [];
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const mul = (a, b) => [
+      a[0]*b[0] + a[2]*b[1],
+      a[1]*b[0] + a[3]*b[1],
+      a[0]*b[2] + a[2]*b[3],
+      a[1]*b[2] + a[3]*b[3],
+      a[0]*b[4] + a[2]*b[5] + a[4],
+      a[1]*b[4] + a[3]*b[5] + a[5],
+    ];
+
+    const imageOps = []; // { name, ctm, idx }
+    const drawOps = []; // { x, y } in PDF coords (unscaled)
+    let curPath = [];
+
+    for (let i = 0; i < fnList.length; i++) {
+      const fn = fnList[i];
+      const args = argsList[i];
+      const FN = pdfjsLib.OPS;
+      switch (fn) {
+        case FN.save: stack.push(ctm.slice()); break;
+        case FN.restore: ctm = stack.pop() || [1,0,0,1,0,0]; break;
+        case FN.transform: ctm = mul(ctm, args); break;
+        case FN.paintImageXObject:
+        case FN.paintImageXObjectRepeat:
+        case FN.paintInlineImageXObject:
+        case FN.paintJpegXObject:
+          imageOps.push({ name: args[0], ctm: ctm.slice(), idx: i, fn });
+          break;
+        case FN.moveTo:
+        case FN.lineTo:
+          drawOps.push({ x: args[0], y: args[1], ctm: ctm.slice() });
+          break;
+        case FN.constructPath: {
+          // newer pdf.js bundles path ops together
+          const pathOps = args[0];
+          const pathArgs = args[1];
+          let ai = 0;
+          for (const op of pathOps) {
+            if (op === FN.moveTo || op === FN.lineTo) {
+              drawOps.push({ x: pathArgs[ai], y: pathArgs[ai+1], ctm: ctm.slice() });
+              ai += 2;
+            } else if (op === FN.curveTo) ai += 6;
+            else if (op === FN.curveTo2 || op === FN.curveTo3) ai += 4;
+            else if (op === FN.rectangle) {
+              drawOps.push({ x: pathArgs[ai], y: pathArgs[ai+1], ctm: ctm.slice() });
+              drawOps.push({ x: pathArgs[ai] + pathArgs[ai+2], y: pathArgs[ai+1] + pathArgs[ai+3], ctm: ctm.slice() });
+              ai += 4;
+            } else if (op === FN.closePath) {/* no args */}
+            else ai += 0;
+          }
+          break;
+        }
+      }
+    }
+
+    // ---- 1. Embedded images: render each by mapping its CTM to the page canvas ----
+    for (const op of imageOps) {
+      try {
+        const img = await new Promise((resolve, reject) => {
+          // Try objs (resolved by render); fall back to commonObjs
+          let resolved = false;
+          const tryResolve = (store) => {
+            try {
+              store.get(op.name, (x) => {
+                if (resolved) return;
+                if (x) { resolved = true; resolve(x); }
+              });
+            } catch (e) { /* not in this store */ }
+          };
+          // pdf.js sometimes resolves these synchronously; try both
+          try {
+            const v = page.objs.has && page.objs.has(op.name) ? page.objs.get(op.name) : null;
+            if (v) { resolved = true; resolve(v); return; }
+          } catch (e) {}
+          try {
+            const v = page.commonObjs.has && page.commonObjs.has(op.name) ? page.commonObjs.get(op.name) : null;
+            if (v) { resolved = true; resolve(v); return; }
+          } catch (e) {}
+          tryResolve(page.objs);
+          tryResolve(page.commonObjs);
+          setTimeout(() => { if (!resolved) resolve(null); }, 200);
+        });
+        if (!img) continue;
+
+        // CTM maps unit square (0,0)-(1,1) to page coords in PDF points.
+        // viewport.transform converts PDF coords to canvas pixels.
+        // Final transform = viewport * CTM. The CTM scale factors give image size in PDF pts.
+        const pdfX = op.ctm[4];
+        const pdfY = op.ctm[5];
+        const pdfW = Math.abs(op.ctm[0]) || Math.abs(op.ctm[2]) || 1;
+        const pdfH = Math.abs(op.ctm[3]) || Math.abs(op.ctm[1]) || 1;
+
+        // Transform the four corners through viewport
+        const corners = [
+          [pdfX, pdfY],
+          [pdfX + pdfW, pdfY],
+          [pdfX, pdfY + pdfH],
+          [pdfX + pdfW, pdfY + pdfH],
+        ].map(([x, y]) => {
+          const tx = pdfjsLib.Util.transform(viewport.transform, [1,0,0,1,x,y]);
+          return { x: tx[4], y: tx[5] };
+        });
+        const xs = corners.map(c => c.x), ys = corners.map(c => c.y);
+        const px = Math.min(...xs), py = Math.min(...ys);
+        const pw = Math.max(...xs) - px;
+        const ph = Math.max(...ys) - py;
+        if (pw < 80 || ph < 60) continue; // too tiny to be a plot
+
+        // Draw the rendered image at its native size onto a new canvas
+        const c2 = document.createElement('canvas');
+        c2.width = Math.max(2, Math.round(pw));
+        c2.height = Math.max(2, Math.round(ph));
+        const c2ctx = c2.getContext('2d');
+        // Easier path: clip from the already-rendered page canvas
+        c2ctx.drawImage(pageCanvas, px, py, pw, ph, 0, 0, c2.width, c2.height);
+
+        // Capture text inside this region for axis label inference
+        const textsInside = textItems.filter(t =>
+          t.x >= px - 8 && t.x <= px + pw + 8 &&
+          t.y >= py - 8 && t.y <= py + ph + 50 // include below for axis labels
+        ).map(t => ({ ...t, x: t.x - px, y: t.y - py }));
+
+        out.push({
+          id: 'img_' + (++imgCounter),
+          dataUrl: c2.toDataURL('image/png'),
+          width: c2.width,
+          height: c2.height,
+          page: p,
+          source: 'embedded',
+          label: `Page ${p} · embedded image #${imageOps.indexOf(op) + 1}`,
+          regionPx: { x: px, y: py, w: pw, h: ph },
+          textsInRegion: textsInside,
+          isLikelyPlot: true,
+        });
+      } catch (err) { console.warn('image extract failed', err); }
+    }
+
+    // ---- 2. Vector-drawn plots: cluster draw ops into bounding boxes ----
+    if (drawOps.length > 100) {
+      // Convert all draw points to canvas (page) pixel space
+      const pts = drawOps.map(op => {
+        const m = mul(viewport.transform, op.ctm);
+        return {
+          x: m[0]*op.x + m[2]*op.y + m[4],
+          y: m[1]*op.x + m[3]*op.y + m[5],
+        };
+      });
+      // Cluster by spatial proximity using a simple grid
+      const clusters = clusterPoints(pts, 80);
+      for (const cl of clusters) {
+        if (cl.length < 60) continue;
+        const xs = cl.map(p => p.x), ys = cl.map(p => p.y);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys);
+        const x1 = Math.max(...xs), y1 = Math.max(...ys);
+        const w = x1 - x0, h = y1 - y0;
+        if (w < 150 || h < 100) continue;
+
+        // Skip if this region is fully inside an already-extracted embedded image
+        const overlapsEmbedded = out.some(im => {
+          if (im.page !== p) return false;
+          const r = im.regionPx;
+          return x0 >= r.x - 4 && y0 >= r.y - 4 && x1 <= r.x + r.w + 4 && y1 <= r.y + r.h + 4;
+        });
+        if (overlapsEmbedded) continue;
+
+        // Add some padding for axis labels
+        const pad = 60;
+        const rx = Math.max(0, x0 - pad);
+        const ry = Math.max(0, y0 - pad);
+        const rw = Math.min(pageCanvas.width - rx, w + 2*pad);
+        const rh = Math.min(pageCanvas.height - ry, h + 2*pad);
+
+        const c2 = document.createElement('canvas');
+        c2.width = Math.round(rw);
+        c2.height = Math.round(rh);
+        c2.getContext('2d').drawImage(pageCanvas, rx, ry, rw, rh, 0, 0, c2.width, c2.height);
+
+        const textsInside = textItems.filter(t =>
+          t.x >= rx - 4 && t.x <= rx + rw + 4 &&
+          t.y >= ry - 4 && t.y <= ry + rh + 4
+        ).map(t => ({ ...t, x: t.x - rx, y: t.y - ry }));
+
+        out.push({
+          id: 'img_' + (++imgCounter),
+          dataUrl: c2.toDataURL('image/png'),
+          width: c2.width,
+          height: c2.height,
+          page: p,
+          source: 'vector',
+          label: `Page ${p} · vector chart #${out.filter(o => o.page === p && o.source === 'vector').length + 1}`,
+          regionPx: { x: rx, y: ry, w: rw, h: rh },
+          textsInRegion: textsInside,
+          isLikelyPlot: true,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function clusterPoints(pts, gap) {
+  // Simple disjoint-set by neighbour merging on a grid
+  const cell = gap;
+  const grid = new Map();
+  pts.forEach((p, i) => {
+    const k = `${Math.floor(p.x/cell)}_${Math.floor(p.y/cell)}`;
+    if (!grid.has(k)) grid.set(k, []);
+    grid.get(k).push(i);
+  });
+  const parent = pts.map((_, i) => i);
+  const find = (i) => parent[i] === i ? i : (parent[i] = find(parent[i]));
+  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  pts.forEach((p, i) => {
+    const cx = Math.floor(p.x/cell), cy = Math.floor(p.y/cell);
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const nb = grid.get(`${cx+dx}_${cy+dy}`);
+        if (nb) for (const j of nb) if (j !== i) union(i, j);
+      }
+  });
+  const groups = new Map();
+  pts.forEach((p, i) => {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(p);
+  });
+  return Array.from(groups.values());
+}
+
+// -------------------- STAGE 2: GALLERY --------------------
+
+function renderImageGallery() {
+  const grid = $('#image-grid');
+  grid.innerHTML = '';
+  $('#gallery-count').textContent = `${State.images.length} image${State.images.length === 1 ? '' : 's'} · ${State.pages.length} page${State.pages.length === 1 ? '' : 's'}`;
+  if (!State.images.length) {
+    grid.appendChild(Object.assign(document.createElement('div'), {
+      className: 'empty-state',
+      textContent: 'No images auto-detected. Switch to "Browse pages & crop" to manually select a region.',
+    }));
+    return;
+  }
+  for (const img of State.images) {
+    const tile = document.createElement('div');
+    tile.className = 'image-tile';
+    tile.innerHTML = `
+      <div class="thumb"><img src="${img.dataUrl}" alt="${img.label}"></div>
+      <div class="meta">
+        <span>${img.label}</span>
+        <span class="badge ${img.source === 'vector' ? 'is-plot' : ''}">${img.source}</span>
+      </div>
+    `;
+    tile.addEventListener('click', () => selectImage(img.id));
+    grid.appendChild(tile);
+  }
+}
+
+function renderPageGallery() {
+  const grid = $('#page-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  if (!State.pages.length) {
+    grid.appendChild(Object.assign(document.createElement('div'), {
+      className: 'empty-state',
+      textContent: 'No pages rendered.',
+    }));
+    return;
+  }
+  for (const pg of State.pages) {
+    const tile = document.createElement('div');
+    tile.className = 'page-tile';
+    tile.innerHTML = `
+      <div class="page-preview"><img src="${pg.dataUrl}" alt="Page ${pg.page}"></div>
+      <div class="meta">
+        <span>Page</span>
+        <span class="num">${pg.page}</span>
+      </div>
+    `;
+    tile.addEventListener('click', () => openCropper(pg.page));
+    grid.appendChild(tile);
+  }
+}
+
+function selectImage(id) {
+  State.selectedImageId = id;
+  setStage('extract');
+  // Run auto-extraction
+  setTimeout(() => runAutoExtraction(), 30);
+}
+
+// -------------------- STAGE 2.5: CROPPER --------------------
+
+function openCropper(pageNum) {
+  State.cropPage = pageNum;
+  State.crop = null;
+  setStage('crop');
+  setTimeout(() => initCropperCanvas(), 30);
+}
+
+function initCropperCanvas() {
+  const pg = State.pages.find(p => p.page === State.cropPage);
+  if (!pg) return;
+  const canvas = $('#cropper-canvas');
+  // Use the rendered page canvas at 1:1, then constrain via CSS
+  canvas.width = pg.width;
+  canvas.height = pg.height;
+  // Limit display size for sanity
+  const wrap = $('#cropper-canvas-wrap');
+  const maxDisplayW = wrap.clientWidth - 40;
+  const ratio = pg.height / pg.width;
+  const displayW = Math.min(maxDisplayW, pg.width);
+  canvas.style.width = displayW + 'px';
+  canvas.style.height = (displayW * ratio) + 'px';
+
+  $('#crop-status').textContent = `Page ${pg.page} · drag to select a region`;
+
+  drawCropper();
+
+  // Drag interaction
+  let mode = null; // 'create' | 'move' | 'resize-<handle>'
+  let startCanvas = null; // pointer position in canvas pixels at drag start
+  let startCrop = null;
+  const HANDLE = 14; // pixels in canvas-space
+
+  const evtToCanvas = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = canvas.width / rect.width;
+    const sy = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * sx,
+      y: (e.clientY - rect.top) * sy,
+    };
+  };
+
+  const detectHandle = (p, c) => {
+    if (!c) return null;
+    const onLeft = Math.abs(p.x - c.x) < HANDLE;
+    const onRight = Math.abs(p.x - (c.x + c.w)) < HANDLE;
+    const onTop = Math.abs(p.y - c.y) < HANDLE;
+    const onBottom = Math.abs(p.y - (c.y + c.h)) < HANDLE;
+    if (onLeft && onTop) return 'tl';
+    if (onRight && onTop) return 'tr';
+    if (onLeft && onBottom) return 'bl';
+    if (onRight && onBottom) return 'br';
+    if (onLeft) return 'l';
+    if (onRight) return 'r';
+    if (onTop) return 't';
+    if (onBottom) return 'b';
+    if (p.x > c.x && p.x < c.x + c.w && p.y > c.y && p.y < c.y + c.h) return 'inside';
+    return null;
+  };
+
+  canvas.onmousedown = (e) => {
+    e.preventDefault();
+    const p = evtToCanvas(e);
+    startCanvas = p;
+    startCrop = State.crop ? { ...State.crop } : null;
+    if (State.crop) {
+      const h = detectHandle(p, State.crop);
+      if (h === 'inside') mode = 'move';
+      else if (h) mode = 'resize-' + h;
+      else mode = 'create';
+    } else {
+      mode = 'create';
+    }
+    if (mode === 'create') {
+      State.crop = { x: p.x, y: p.y, w: 0, h: 0 };
+    }
+  };
+  canvas.onmousemove = (e) => {
+    const p = evtToCanvas(e);
+    // Update cursor based on hover
+    if (!mode) {
+      const h = State.crop ? detectHandle(p, State.crop) : null;
+      const cursors = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize', l: 'ew-resize', r: 'ew-resize', t: 'ns-resize', b: 'ns-resize', inside: 'move' };
+      canvas.style.cursor = cursors[h] || 'crosshair';
+      return;
+    }
+    if (mode === 'create') {
+      const c = State.crop;
+      let w = p.x - c.x;
+      let h = p.y - c.y;
+      if (e.shiftKey) {
+        const m = Math.min(Math.abs(w), Math.abs(h));
+        w = Math.sign(w) * m;
+        h = Math.sign(h) * m;
+      }
+      c.w = w; c.h = h;
+    } else if (mode === 'move') {
+      State.crop.x = startCrop.x + (p.x - startCanvas.x);
+      State.crop.y = startCrop.y + (p.y - startCanvas.y);
+    } else if (mode.startsWith('resize-')) {
+      const h = mode.split('-')[1];
+      let nx = startCrop.x, ny = startCrop.y, nw = startCrop.w, nh = startCrop.h;
+      if (h.includes('l')) { nx = p.x; nw = startCrop.x + startCrop.w - p.x; }
+      if (h.includes('r')) { nw = p.x - startCrop.x; }
+      if (h.includes('t')) { ny = p.y; nh = startCrop.y + startCrop.h - p.y; }
+      if (h.includes('b')) { nh = p.y - startCrop.y; }
+      State.crop = { x: nx, y: ny, w: nw, h: nh };
+    }
+    drawCropper();
+    updateCropFields();
+  };
+  window.onmouseup = () => {
+    if (mode === 'create' && State.crop) {
+      // Normalise so width/height are positive
+      const c = State.crop;
+      if (c.w < 0) { c.x += c.w; c.w = -c.w; }
+      if (c.h < 0) { c.y += c.h; c.h = -c.h; }
+      // Ignore tiny accidental clicks
+      if (c.w < 8 || c.h < 8) State.crop = null;
+    }
+    mode = null;
+    drawCropper();
+    updateCropFields();
+  };
+}
+
+function drawCropper() {
+  const pg = State.pages.find(p => p.page === State.cropPage);
+  if (!pg) return;
+  const canvas = $('#cropper-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(pg.canvas, 0, 0);
+  if (!State.crop) return;
+  const c = State.crop;
+  // Dim outside the selection
+  ctx.fillStyle = 'rgba(26, 22, 17, 0.55)';
+  ctx.fillRect(0, 0, canvas.width, c.y);
+  ctx.fillRect(0, c.y + c.h, canvas.width, canvas.height - c.y - c.h);
+  ctx.fillRect(0, c.y, c.x, c.h);
+  ctx.fillRect(c.x + c.w, c.y, canvas.width - c.x - c.w, c.h);
+  // Selection outline
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#b4441f';
+  ctx.setLineDash([10, 6]);
+  ctx.strokeRect(c.x, c.y, c.w, c.h);
+  ctx.setLineDash([]);
+  // Corner handles
+  ctx.fillStyle = '#1a1611';
+  ctx.strokeStyle = '#f5f1e8';
+  ctx.lineWidth = 1;
+  const HS = 8;
+  [[c.x, c.y], [c.x + c.w, c.y], [c.x, c.y + c.h], [c.x + c.w, c.y + c.h]].forEach(([x, y]) => {
+    ctx.fillRect(x - HS / 2, y - HS / 2, HS, HS);
+    ctx.strokeRect(x - HS / 2, y - HS / 2, HS, HS);
+  });
+}
+
+function updateCropFields() {
+  if (!State.crop) {
+    $('#crop-x').value = '';
+    $('#crop-y').value = '';
+    $('#crop-w').value = '';
+    $('#crop-h').value = '';
+    return;
+  }
+  $('#crop-x').value = Math.round(State.crop.x);
+  $('#crop-y').value = Math.round(State.crop.y);
+  $('#crop-w').value = Math.round(State.crop.w);
+  $('#crop-h').value = Math.round(State.crop.h);
+}
+
+function readCropFields() {
+  const x = parseFloat($('#crop-x').value);
+  const y = parseFloat($('#crop-y').value);
+  const w = parseFloat($('#crop-w').value);
+  const h = parseFloat($('#crop-h').value);
+  if ([x, y, w, h].some(v => isNaN(v))) return;
+  State.crop = { x, y, w, h };
+  drawCropper();
+}
+
+function confirmCrop() {
+  if (!State.crop || State.crop.w < 10 || State.crop.h < 10) {
+    toast('Drag a region first', 'warn');
+    return;
+  }
+  const pg = State.pages.find(p => p.page === State.cropPage);
+  if (!pg) return;
+  const c = State.crop;
+  // Clamp to image bounds
+  const x = Math.max(0, Math.min(pg.width, c.x));
+  const y = Math.max(0, Math.min(pg.height, c.y));
+  const w = Math.max(10, Math.min(pg.width - x, c.w));
+  const h = Math.max(10, Math.min(pg.height - y, c.h));
+
+  // Render crop to a new canvas
+  const c2 = document.createElement('canvas');
+  c2.width = Math.round(w);
+  c2.height = Math.round(h);
+  c2.getContext('2d').drawImage(pg.canvas, x, y, w, h, 0, 0, c2.width, c2.height);
+
+  // Filter text items into the crop region
+  const textsInside = pg.textItems.filter(t =>
+    t.x >= x - 4 && t.x <= x + w + 4 &&
+    t.y >= y - 4 && t.y <= y + h + 4
+  ).map(t => ({ ...t, x: t.x - x, y: t.y - y }));
+
+  // Build a synthetic image entry and select it
+  const imgId = 'crop_' + Date.now();
+  const newImg = {
+    id: imgId,
+    dataUrl: c2.toDataURL('image/png'),
+    width: c2.width,
+    height: c2.height,
+    page: pg.page,
+    source: 'cropped',
+    label: `Page ${pg.page} · cropped region`,
+    regionPx: { x, y, w, h },
+    textsInRegion: textsInside,
+    isLikelyPlot: true,
+  };
+  State.images.unshift(newImg);
+  selectImage(imgId);
+}
+
+// -------------------- STAGE 3: AUTO-EXTRACTION --------------------
+
+async function runAutoExtraction() {
+  const img = State.images.find(i => i.id === State.selectedImageId);
+  if (!img) return;
+  showLoading('Analysing chart', 'detecting plot box…');
+  // Load the image data so we can read pixels
+  const bitmap = await loadImageBitmap(img.dataUrl);
+  // Render to a canvas for pixel access
+  const c = document.createElement('canvas');
+  c.width = bitmap.width;
+  c.height = bitmap.height;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0);
+  const imageData = ctx.getImageData(0, 0, c.width, c.height);
+
+  showLoading('Analysing chart', 'finding axes…');
+  const plotBox = detectPlotBox(imageData);
+
+  showLoading('Analysing chart', 'reading axis labels…');
+  const axisLabels = inferAxisLabelsFromText(img.textsInRegion, plotBox, img);
+
+  showLoading('Analysing chart', 'identifying curve colours…');
+  const curveColors = detectCurveColors(imageData, plotBox);
+
+  // Build legend candidates from text but DON'T trace yet — user picks
+  showLoading('Analysing chart', 'matching legend…');
+  const legendMatches = matchLegend(img.textsInRegion, curveColors, plotBox);
+
+  State.extraction = {
+    image: img,
+    bitmap,
+    canvas: c,
+    plotBox,
+    axisLabels,
+    curves: curveColors.map((cc, i) => ({
+      id: 'curve_' + (i+1),
+      color: cc.color,
+      colorHex: rgbToHex(cc.color),
+      points: [], // empty — traced on demand
+      enabled: true,
+      traced: false,
+      name: legendMatches[i] || `Curve ${i+1}`,
+    })),
+    calibration: {
+      xMin: axisLabels.xMin ?? 0,
+      xMax: axisLabels.xMax ?? 1,
+      yMin: axisLabels.yMin ?? 0,
+      yMax: axisLabels.yMax ?? 1,
+      xLog: false, yLog: false,
+      xLabel: axisLabels.xLabel || 'x',
+      yLabel: axisLabels.yLabel || 'y',
+    },
+    interactionMode: 'pick', // 'pick' (click curve to trace) | 'erase' (click point to delete) | 'lasso' (drag to erase region)
+    activeCurveId: null,
+    lasso: null,
+  };
+  renderExtraction();
+  hideLoading();
+  toast(`Found ${State.extraction.curves.length} candidate curve${State.extraction.curves.length === 1 ? '' : 's'} — click one in the side panel or on the chart to extract it`, 'ok', 5000);
+}
+
+function loadImageBitmap(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+// -------- Plot box detection --------
+function detectPlotBox(imageData) {
+  // Strategy:
+  // 1. Compute "darkness" (1 - brightness) for each pixel; treat as candidate axis pixels.
+  // 2. Project to row & column sums of "axis-like" pixels (dark + low saturation).
+  // 3. Find the strongest left vertical line (max column sum in the left half) and the
+  //    strongest bottom horizontal line (max row sum in the bottom half).
+  // 4. Find right and top by extending until the dark line disappears (or by symmetry).
+  const w = imageData.width, h = imageData.height;
+  const data = imageData.data;
+  const isAxisPixel = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      const max = Math.max(r,g,b), min = Math.min(r,g,b);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      const lum = (r + g + b) / 3;
+      // axis pixels: dark and low saturation (black/grey)
+      if (lum < 100 && sat < 0.25) isAxisPixel[y*w+x] = 1;
+    }
+  }
+
+  // Column sums (for vertical lines) and row sums (horizontal lines)
+  const colSum = new Int32Array(w);
+  const rowSum = new Int32Array(h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (isAxisPixel[y*w+x]) { colSum[x]++; rowSum[y]++; }
+    }
+  }
+
+  // Find left axis: strongest vertical line in the left 50%
+  const leftSearchEnd = Math.floor(w * 0.5);
+  let leftBest = 0, leftX = 0;
+  for (let x = Math.floor(w*0.02); x < leftSearchEnd; x++) {
+    if (colSum[x] > leftBest) { leftBest = colSum[x]; leftX = x; }
+  }
+
+  // Right axis: strongest vertical line in the right 50%
+  const rightSearchStart = Math.floor(w * 0.5);
+  let rightBest = 0, rightX = w - 1;
+  for (let x = rightSearchStart; x < w - Math.floor(w*0.02); x++) {
+    if (colSum[x] > rightBest) { rightBest = colSum[x]; rightX = x; }
+  }
+
+  // Bottom axis: strongest horizontal line in bottom 50%
+  const bottomSearchStart = Math.floor(h * 0.5);
+  let bottomBest = 0, bottomY = h - 1;
+  for (let y = bottomSearchStart; y < h - Math.floor(h*0.02); y++) {
+    if (rowSum[y] > bottomBest) { bottomBest = rowSum[y]; bottomY = y; }
+  }
+
+  // Top: strongest horizontal line in top 50%
+  const topSearchEnd = Math.floor(h * 0.5);
+  let topBest = 0, topY = 0;
+  for (let y = Math.floor(h*0.02); y < topSearchEnd; y++) {
+    if (rowSum[y] > topBest) { topBest = rowSum[y]; topY = y; }
+  }
+
+  // Sanity-check: thresholds. If no clear top/right axes, set them to the image extents.
+  // A "real" axis line should span at least 30% of the orthogonal dimension.
+  const minVertSpan = h * 0.3, minHorzSpan = w * 0.3;
+  if (rightBest < minVertSpan) rightX = w - 2;
+  if (topBest < minHorzSpan) topY = 2;
+  if (leftBest < minVertSpan) leftX = Math.floor(w * 0.1);
+  if (bottomBest < minHorzSpan) bottomY = Math.floor(h * 0.9);
+
+  return {
+    left: leftX,
+    right: rightX,
+    top: topY,
+    bottom: bottomY,
+    width: rightX - leftX,
+    height: bottomY - topY,
+    confidence: Math.min(1, (leftBest + bottomBest) / (h + w)),
+  };
+}
+
+// -------- Axis label inference (uses PDF text positions) --------
+function inferAxisLabelsFromText(texts, plotBox, img) {
+  // texts are in image pixel coordinates already
+  // Numeric tokens near the bottom edge below the plot box → x ticks
+  // Numeric tokens left of the plot box (between left axis and left edge) → y ticks
+  // The non-numeric text below all x ticks → x axis label
+  // The non-numeric text rotated/positioned left of all y ticks → y axis label
+
+  const isNumeric = (s) => /^-?\d+(?:[.,]\d+)?(?:e-?\d+)?\s*%?$/i.test(s.trim());
+  const parseNum = (s) => parseFloat(s.replace(/,/g, '').replace('%',''));
+
+  const xTickCandidates = texts.filter(t =>
+    isNumeric(t.str) &&
+    t.y > plotBox.bottom - 4 && t.y < plotBox.bottom + 60 &&
+    t.x >= plotBox.left - 30 && t.x <= plotBox.right + 30
+  );
+  const yTickCandidates = texts.filter(t =>
+    isNumeric(t.str) &&
+    t.x < plotBox.left + 4 && t.x > plotBox.left - 100 &&
+    t.y >= plotBox.top - 20 && t.y <= plotBox.bottom + 20
+  );
+
+  // Sort by position
+  xTickCandidates.sort((a, b) => a.x - b.x);
+  yTickCandidates.sort((a, b) => b.y - a.y); // bottom first (smallest y value first)
+
+  let xMin = null, xMax = null, yMin = null, yMax = null;
+  if (xTickCandidates.length >= 2) {
+    xMin = parseNum(xTickCandidates[0].str);
+    xMax = parseNum(xTickCandidates[xTickCandidates.length - 1].str);
+  }
+  if (yTickCandidates.length >= 2) {
+    yMin = parseNum(yTickCandidates[0].str);
+    yMax = parseNum(yTickCandidates[yTickCandidates.length - 1].str);
+  }
+
+  // x label: longest non-numeric text below the plot, beyond the tick row
+  const xTickY = xTickCandidates.length ? Math.max(...xTickCandidates.map(t => t.y)) : plotBox.bottom + 16;
+  const xLabelCands = texts.filter(t =>
+    !isNumeric(t.str) &&
+    t.y > xTickY + 2 && t.y < plotBox.bottom + 100 &&
+    t.x >= plotBox.left - 60 && t.x <= plotBox.right + 60 &&
+    t.str.trim().length > 1
+  ).sort((a, b) => b.str.length - a.str.length);
+  const xLabel = xLabelCands[0]?.str.trim() || '';
+
+  // y label: longest non-numeric text far left of the plot
+  const yLabelCands = texts.filter(t =>
+    !isNumeric(t.str) &&
+    t.x < plotBox.left - 20 && t.x > plotBox.left - 200 &&
+    t.y >= plotBox.top - 20 && t.y <= plotBox.bottom + 20 &&
+    t.str.trim().length > 1
+  ).sort((a, b) => b.str.length - a.str.length);
+  const yLabel = yLabelCands[0]?.str.trim() || '';
+
+  return { xMin, xMax, yMin, yMax, xLabel, yLabel,
+    xTickCount: xTickCandidates.length,
+    yTickCount: yTickCandidates.length,
+  };
+}
+
+// -------- Curve color detection --------
+function detectCurveColors(imageData, plotBox) {
+  // Inside the plot box, build a color histogram for non-white, non-axis pixels.
+  // We KEEP dark/grey colours too (they may be the actual curve) but group them
+  // separately from chromatic colours so we don't accidentally drop a valid black
+  // curve. After histogramming we run a refinement step that recomputes the centroid
+  // of each candidate cluster from the actual pixel colours, which reduces tolerance
+  // bias for tightly-grouped colours.
+  const w = imageData.width;
+  const data = imageData.data;
+  const counts = new Map();
+
+  // Use a tighter inset so we don't include the axis lines themselves
+  const inset = 4;
+  const x0 = plotBox.left + inset, x1 = plotBox.right - inset;
+  const y0 = plotBox.top + inset, y1 = plotBox.bottom - inset;
+
+  // Tighter quantization improves separation of similar colours (e.g. blue vs cyan)
+  const QUANT = 18;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const i = (y * w + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      if (a < 200) continue;
+      // skip near-white background
+      if (r > 240 && g > 240 && b > 240) continue;
+      // skip light grey gridlines
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      const sat = max === 0 ? 0 : (max - min) / max;
+      const lum = (r + g + b) / 3;
+      if (sat < 0.08 && lum > 200) continue;
+      // bucket
+      const rk = Math.round(r / QUANT) * QUANT;
+      const gk = Math.round(g / QUANT) * QUANT;
+      const bk = Math.round(b / QUANT) * QUANT;
+      const k = `${rk},${gk},${bk}`;
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+  }
+
+  // Sort by frequency
+  const entries = Array.from(counts.entries())
+    .map(([k, c]) => {
+      const [r, g, b] = k.split(',').map(Number);
+      return { color: [r, g, b], count: c };
+    })
+    .sort((a, b) => b.count - a.count);
+
+  // Minimum support
+  const totalArea = (x1 - x0) * (y1 - y0);
+  const minCount = Math.max(20, totalArea * 0.0004);
+
+  const picked = [];
+  // Two passes: first pass keeps colourful candidates, second pass adds dark/grey
+  // candidates only if they are well separated from the picked ones AND there's
+  // enough of them to be a real curve (helps include a black curve mixed with red/blue).
+  for (const e of entries) {
+    if (e.count < minCount) break;
+    const [r, g, b] = e.color;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    const lum = (r + g + b) / 3;
+    // First pass: skip very dark greys (handled in second pass) and skip near duplicates
+    if (sat < 0.15 && lum < 80) continue;
+    if (sat < 0.10) continue;
+    if (picked.some(p => colorDistance(p.color, e.color) < 45)) continue;
+    picked.push(e);
+    if (picked.length >= 8) break;
+  }
+  // Second pass: dark/grey candidates if not already represented
+  for (const e of entries) {
+    if (e.count < minCount * 1.5) break;
+    const [r, g, b] = e.color;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const sat = max === 0 ? 0 : (max - min) / max;
+    const lum = (r + g + b) / 3;
+    if (sat >= 0.15 || lum >= 80) continue;
+    // Only add if very different from already-picked
+    if (picked.some(p => colorDistance(p.color, e.color) < 60)) continue;
+    picked.push(e);
+    if (picked.length >= 8) break;
+  }
+
+  if (!picked.length) {
+    picked.push({ color: [40, 40, 40], count: 0 });
+  }
+
+  // Centroid refinement: for each picked color, find all pixels within distance D
+  // and recompute the centroid. This nails the actual curve colour without bucketing bias.
+  const refined = picked.map(p => {
+    const target = p.color;
+    let cr = 0, cg = 0, cb = 0, count = 0;
+    const D = 30, Dsq = D * D;
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = (y * w + x) * 4;
+        const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+        if (a < 200) continue;
+        const dr = r - target[0], dg = g - target[1], db = b - target[2];
+        if (dr * dr + dg * dg + db * db <= Dsq * 3) {
+          cr += r; cg += g; cb += b; count++;
+        }
+      }
+    }
+    if (count > 0) return { color: [Math.round(cr / count), Math.round(cg / count), Math.round(cb / count)] };
+    return { color: target };
+  });
+
+  // Final dedup after refinement
+  const final = [];
+  for (const r of refined) {
+    if (final.some(p => colorDistance(p.color, r.color) < 30)) continue;
+    final.push(r);
+  }
+  return final;
+}
+
+function colorDistance(a, b) {
+  return Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]);
+}
+
+// -------- Curve tracing --------
+function traceCurveByColor(imageData, plotBox, curveSpec, opts = {}) {
+  // Style-aware curve tracer.
+  // 1. Build a binary mask of pixels matching the target color within an adaptive tolerance.
+  //    Tolerance is tighter for saturated targets (so red doesn't capture orange next to it)
+  //    and looser for desaturated targets (so dark grey doesn't get confused with axis ink).
+  // 2. Find connected components of mask pixels (8-connectivity). Components small enough to
+  //    be a legend swatch, tick mark, or text artifact are dropped (heuristics: component
+  //    bounding box width relative to total chart width; isolated tiny blobs).
+  // 3. Reconstruct a polyline by, for each column, picking the y-value from the component
+  //    that spans the widest x-range (the "main" curve component for this color).
+  // 4. For dashed/dotted curves the visible runs are different components, so we keep all
+  //    components that pass the size filter and stitch them by x-order, interpolating across
+  //    the dash gaps. The output is a dense polyline regardless of line style.
+  const w = imageData.width;
+  const h = imageData.height;
+  const data = imageData.data;
+  const target = curveSpec.color;
+  const inset = 2;
+  const x0 = plotBox.left + inset, x1 = plotBox.right - inset;
+  const y0 = plotBox.top + inset, y1 = plotBox.bottom - inset;
+  const W = x1 - x0;
+  const H = y1 - y0;
+
+  // Adaptive tolerance — tighter for saturated colours, looser for greys/blacks
+  const tMax = Math.max(target[0], target[1], target[2]);
+  const tMin = Math.min(target[0], target[1], target[2]);
+  const targetSat = tMax === 0 ? 0 : (tMax - tMin) / tMax;
+  const baseTol = opts.tolerance ?? (targetSat > 0.4 ? 32 : 50);
+  const tolSq = baseTol * baseTol * 3;
+
+  // Build mask
+  const mask = new Uint8Array(W * H);
+  for (let yy = 0; yy < H; yy++) {
+    const row = (y0 + yy) * w;
+    for (let xx = 0; xx < W; xx++) {
+      const i = (row + (x0 + xx)) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
+      if (a < 200) continue;
+      const dr = r - target[0], dg = g - target[1], db = b - target[2];
+      if (dr * dr + dg * dg + db * db <= tolSq) mask[yy * W + xx] = 1;
+    }
+  }
+
+  // Connected components (8-connectivity) using union-find on a flat array
+  const labels = new Int32Array(W * H);
+  let nextLabel = 1;
+  const parent = [0]; // index 0 unused
+  const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+
+  for (let yy = 0; yy < H; yy++) {
+    for (let xx = 0; xx < W; xx++) {
+      if (!mask[yy * W + xx]) continue;
+      // Check up, up-left, up-right, left
+      const neighbors = [];
+      if (xx > 0 && mask[yy * W + xx - 1]) neighbors.push(labels[yy * W + xx - 1]);
+      if (yy > 0 && mask[(yy - 1) * W + xx]) neighbors.push(labels[(yy - 1) * W + xx]);
+      if (yy > 0 && xx > 0 && mask[(yy - 1) * W + xx - 1]) neighbors.push(labels[(yy - 1) * W + xx - 1]);
+      if (yy > 0 && xx < W - 1 && mask[(yy - 1) * W + xx + 1]) neighbors.push(labels[(yy - 1) * W + xx + 1]);
+      if (!neighbors.length) {
+        labels[yy * W + xx] = nextLabel;
+        parent[nextLabel] = nextLabel;
+        nextLabel++;
+      } else {
+        const m = Math.min(...neighbors);
+        labels[yy * W + xx] = m;
+        for (const n of neighbors) if (n !== m) union(n, m);
+      }
+    }
+  }
+
+  // Resolve labels and collect components: for each label, store {minX, maxX, minY, maxY, count, pixelsByX}
+  const comps = new Map();
+  for (let yy = 0; yy < H; yy++) {
+    for (let xx = 0; xx < W; xx++) {
+      const lbl = labels[yy * W + xx];
+      if (!lbl) continue;
+      const root = find(lbl);
+      let c = comps.get(root);
+      if (!c) {
+        c = { minX: xx, maxX: xx, minY: yy, maxY: yy, count: 0, pixelsByX: new Map() };
+        comps.set(root, c);
+      }
+      c.count++;
+      if (xx < c.minX) c.minX = xx;
+      if (xx > c.maxX) c.maxX = xx;
+      if (yy < c.minY) c.minY = yy;
+      if (yy > c.maxY) c.maxY = yy;
+      // For each x column track the set of y values in this component
+      let ys = c.pixelsByX.get(xx);
+      if (!ys) { ys = []; c.pixelsByX.set(xx, ys); }
+      ys.push(yy);
+    }
+  }
+
+  // Filter components: drop very small (text/swatch) ones and very tall narrow ones
+  // (axis ticks). Keep components whose:
+  //   - bounding box width >= max(8, 1.5% of W)  AND  count >= 6
+  //   - OR are small dots that fit a "dotted line" pattern (many small components
+  //     aligned roughly on a curve). For simplicity we keep small ones that aren't
+  //     in the legend area and let the median-X stitching handle them.
+  const minWidth = Math.max(8, W * 0.015);
+  const keep = [];
+  for (const [root, c] of comps) {
+    const cw = c.maxX - c.minX + 1;
+    const ch = c.maxY - c.minY + 1;
+    // Reject 1x1 noise
+    if (c.count < 3) continue;
+    // Reject huge solid blobs that are clearly fills (very high pixel density in box)
+    const density = c.count / (cw * ch);
+    if (cw > W * 0.6 && ch > H * 0.5 && density > 0.4) continue;
+    // Reject vertical strips at far-left/right (axis ticks/labels)
+    if (cw < 4 && (c.minX < W * 0.04 || c.maxX > W * 0.96)) continue;
+    keep.push(c);
+  }
+
+  if (!keep.length) {
+    return { color: curveSpec.color, points: [] };
+  }
+
+  // Determine if this is a dotted/dashed line: many small components scattered along x
+  const totalSpan = keep.reduce((sum, c) => sum + (c.maxX - c.minX + 1), 0);
+  const dashedLike = keep.length > 4 && totalSpan / keep.length < W * 0.15;
+
+  // Build the polyline. For each x column inside [x0, x1], gather y values from kept comps;
+  // pick the median y (stable against thickness) and store (x, y).
+  const colYs = new Map();
+  keep.forEach(c => {
+    c.pixelsByX.forEach((ys, x) => {
+      let arr = colYs.get(x);
+      if (!arr) { arr = []; colYs.set(x, arr); }
+      ys.forEach(y => arr.push(y));
+    });
+  });
+
+  // Sort x columns and produce one point per column
+  const xs = Array.from(colYs.keys()).sort((a, b) => a - b);
+  const rawPoints = xs.map(x => {
+    const ys = colYs.get(x);
+    ys.sort((a, b) => a - b);
+    const median = ys[Math.floor(ys.length / 2)];
+    return { px: x + x0, py: median + y0 };
+  });
+
+  // Smooth: rolling median over 3 columns to kill outliers
+  const smoothed = rawPoints.map((p, i) => {
+    const start = Math.max(0, i - 1);
+    const end = Math.min(rawPoints.length, i + 2);
+    const ys = rawPoints.slice(start, end).map(q => q.py).sort((a, b) => a - b);
+    return { px: p.px, py: ys[Math.floor(ys.length / 2)] };
+  });
+
+  // For dashed lines, fill gaps via linear interpolation
+  let final = smoothed;
+  if (dashedLike && smoothed.length > 1) {
+    const filled = [];
+    for (let i = 0; i < smoothed.length - 1; i++) {
+      const a = smoothed[i], b = smoothed[i + 1];
+      filled.push(a);
+      const gap = b.px - a.px;
+      if (gap > 2 && gap < W * 0.25) {
+        const steps = Math.min(gap - 1, 20);
+        for (let k = 1; k <= steps; k++) {
+          const t = k / (steps + 1);
+          filled.push({ px: a.px + (b.px - a.px) * t, py: a.py + (b.py - a.py) * t, interpolated: true });
+        }
+      }
+    }
+    filled.push(smoothed[smoothed.length - 1]);
+    final = filled;
+  }
+
+  // Cap point count for performance
+  const TARGET_PTS = 500;
+  if (final.length > TARGET_PTS) {
+    const step = Math.ceil(final.length / TARGET_PTS);
+    final = final.filter((_, i) => i % step === 0);
+  }
+
+  return { color: curveSpec.color, points: final, dashedLike };
+}
+
+function rgbToHex([r,g,b]) {
+  return '#' + [r,g,b].map(v => Math.round(v).toString(16).padStart(2,'0')).join('');
+}
+function hexToRgb(h) {
+  const m = h.replace('#','').match(/.{2}/g);
+  return m ? m.map(s => parseInt(s,16)) : [0,0,0];
+}
+
+// -------- Legend matching --------
+function matchLegend(texts, curves, plotBox) {
+  // Heuristic: legend is usually a cluster of short non-numeric text inside or just outside the plot
+  // box. For each curve, find the legend text whose horizontal center is closest to a curve-colored
+  // swatch detected nearby. Since we don't reliably detect swatches, fall back to ordering by Y.
+  // Step 1: candidate legend texts: short, non-numeric, inside plot region
+  const isNumeric = (s) => /^-?\d+(?:[.,]\d+)?\s*%?$/.test(s.trim());
+  const pad = 30;
+  const candidates = texts.filter(t =>
+    !isNumeric(t.str) &&
+    t.x >= plotBox.left - pad && t.x <= plotBox.right + pad &&
+    t.y >= plotBox.top - pad && t.y <= plotBox.bottom + pad &&
+    t.str.trim().length > 0 && t.str.trim().length < 40
+  );
+  // If we have as many or more candidates as curves and they're stacked vertically, assign by y order
+  if (candidates.length >= curves.length) {
+    candidates.sort((a, b) => a.y - b.y);
+    return candidates.slice(0, curves.length).map(t => t.str.trim());
+  }
+  return [];
+}
+
+// -------- Pixel <-> data coordinate transform --------
+function pixelToData(px, py, plotBox, calibration) {
+  // If a manual 4-point calibration is set, use it directly. The two X reference
+  // points define the X axis mapping (their pixel X positions and target values),
+  // and likewise the two Y reference points for Y. Each axis is computed independently
+  // so the user doesn't have to click points exactly on a perfect axis line.
+  const manual = calibration.manual;
+  let xVal, yVal;
+  if (manual && manual.x1Px && manual.x2Px && !isNaN(manual.x1Val) && !isNaN(manual.x2Val) &&
+      manual.y1Px && manual.y2Px && !isNaN(manual.y1Val) && !isNaN(manual.y2Val)) {
+    const fx = (px - manual.x1Px.x) / (manual.x2Px.x - manual.x1Px.x);
+    const fy = (py - manual.y1Px.y) / (manual.y2Px.y - manual.y1Px.y);
+    if (calibration.xLog) {
+      const l1 = Math.log10(manual.x1Val), l2 = Math.log10(manual.x2Val);
+      xVal = Math.pow(10, l1 + fx * (l2 - l1));
+    } else {
+      xVal = manual.x1Val + fx * (manual.x2Val - manual.x1Val);
+    }
+    if (calibration.yLog) {
+      const l1 = Math.log10(manual.y1Val), l2 = Math.log10(manual.y2Val);
+      yVal = Math.pow(10, l1 + fy * (l2 - l1));
+    } else {
+      yVal = manual.y1Val + fy * (manual.y2Val - manual.y1Val);
+    }
+    return { x: xVal, y: yVal };
+  }
+  // Otherwise use edge-based calibration (auto-detected or user-entered)
+  const fx = (px - plotBox.left) / plotBox.width;
+  const fy = (plotBox.bottom - py) / plotBox.height; // flip y
+  if (calibration.xLog) {
+    const l1 = Math.log10(calibration.xMin), l2 = Math.log10(calibration.xMax);
+    xVal = Math.pow(10, l1 + fx * (l2 - l1));
+  } else {
+    xVal = calibration.xMin + fx * (calibration.xMax - calibration.xMin);
+  }
+  if (calibration.yLog) {
+    const l1 = Math.log10(calibration.yMin), l2 = Math.log10(calibration.yMax);
+    yVal = Math.pow(10, l1 + fy * (l2 - l1));
+  } else {
+    yVal = calibration.yMin + fy * (calibration.yMax - calibration.yMin);
+  }
+  return { x: xVal, y: yVal };
+}
+
+function recomputeDataValues() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ext.curves.forEach(curve => {
+    curve.points.forEach(p => {
+      const d = pixelToData(p.px, p.py, ext.plotBox, ext.calibration);
+      p.x = d.x;
+      p.y = d.y;
+    });
+  });
+}
+
+// -------------------- RENDER EXTRACTION UI --------------------
+function renderExtraction() {
+  const ext = State.extraction;
+  if (!ext) return;
+
+  // Status
+  updateExtractStatus();
+
+  // Detect status panel
+  const ds = $('#detect-status');
+  ds.innerHTML = '';
+  const isManual = !!(ext.calibration?.manual && ext.calibration.manual.step >= 4
+                      && !isNaN(ext.calibration.manual.x1Val) && !isNaN(ext.calibration.manual.x2Val));
+  const items = [
+    ['Plot box', `${ext.plotBox.width} × ${ext.plotBox.height} px`],
+    ['Confidence', `${(ext.plotBox.confidence * 100).toFixed(0)}%`],
+    ['Calibration', isManual ? `<span class="ok">manual (4 points)</span>` : `<span>edge-based</span>`],
+    ['X label', ext.calibration.xLabel || `<span class="warn">not detected</span>`],
+    ['Y label', ext.calibration.yLabel || `<span class="warn">not detected</span>`],
+    ['X range', `${formatNum(ext.calibration.xMin)} → ${formatNum(ext.calibration.xMax)}`],
+    ['Y range', `${formatNum(ext.calibration.yMin)} → ${formatNum(ext.calibration.yMax)}`],
+    ['Curves', `<span class="ok">${ext.curves.length} found</span>`],
+  ];
+  for (const [k, v] of items) {
+    const dt = document.createElement('dt');
+    dt.textContent = k;
+    const dd = document.createElement('dd');
+    dd.innerHTML = v;
+    ds.appendChild(dt); ds.appendChild(dd);
+  }
+
+  // Axis fields
+  $('#ax-xlabel').value = ext.calibration.xLabel || '';
+  $('#ax-ylabel').value = ext.calibration.yLabel || '';
+  $('#ax-xmin').value = ext.calibration.xMin ?? '';
+  $('#ax-xmax').value = ext.calibration.xMax ?? '';
+  $('#ax-ymin').value = ext.calibration.yMin ?? '';
+  $('#ax-ymax').value = ext.calibration.yMax ?? '';
+  $('#ax-xlog').checked = ext.calibration.xLog;
+  $('#ax-ylog').checked = ext.calibration.yLog;
+
+  // Curves list
+  renderCurvesList();
+
+  // Canvas overlay
+  drawExtractionCanvas();
+
+  $('#canvas-info').textContent =
+    `Image: ${ext.image.width} × ${ext.image.height} px (${ext.image.source})`;
+}
+
+function renderCurvesList() {
+  const ext = State.extraction;
+  const list = $('#curves-list');
+  list.innerHTML = '';
+  ext.curves.forEach((curve, idx) => {
+    const row = document.createElement('div');
+    row.className = 'curve-row' + (curve.enabled ? '' : ' disabled') + (curve.id === ext.activeCurveId ? ' active' : '');
+    const traced = curve.traced && curve.points.length > 0;
+    row.innerHTML = `
+      <input type="color" class="swatch" value="${curve.colorHex}" title="Click to change colour">
+      <div class="info">
+        <input class="name" value="${escapeHtml(curve.name)}" style="background:transparent;border:none;width:100%;font-family:var(--serif);font-style:italic;font-size:14px;color:var(--ink);outline:none;padding:0;">
+        <span class="stats">${traced ? `<span style="color:var(--accent-2);font-weight:700">${curve.points.length} pts</span>${curve.dashedLike ? ' · <em style="color:var(--accent)">dashed</em>' : ''}` : '<span style="color:var(--ink-3)">not traced yet</span>'} · ${curve.colorHex}</span>
+      </div>
+      <button class="btn ${traced ? 'btn-ghost' : 'btn-accent'} btn-sm" data-act="trace">${traced ? 'Re-trace' : '◉ Extract'}</button>
+      ${traced ? '<button class="toggle" data-act="clear" title="Remove all points for this curve">✕</button>' : ''}
+      <button class="toggle" data-act="toggle" title="${curve.enabled ? 'Hide on chart' : 'Show on chart'}">${curve.enabled ? '◉' : '○'}</button>
+    `;
+    // Color swatch — change color & re-trace if already traced
+    const swatch = row.querySelector('.swatch');
+    swatch.addEventListener('click', (e) => e.stopPropagation());
+    swatch.addEventListener('input', (e) => {
+      curve.colorHex = e.target.value;
+      curve.color = hexToRgb(curve.colorHex);
+      if (curve.traced) {
+        const fresh = traceCurveByColor(
+          State.extraction.canvas.getContext('2d').getImageData(0, 0, State.extraction.canvas.width, State.extraction.canvas.height),
+          State.extraction.plotBox,
+          { color: curve.color },
+        );
+        curve.points = fresh.points;
+        recomputeDataValues();
+      }
+      renderCurvesList();
+      drawExtractionCanvas();
+      updateExtractStatus();
+    });
+    // Name input — don't propagate
+    const nameInp = row.querySelector('.name');
+    nameInp.addEventListener('click', (e) => e.stopPropagation());
+    nameInp.addEventListener('input', (e) => { curve.name = e.target.value; });
+    // Trace / re-trace button
+    const traceBtn = row.querySelector('[data-act="trace"]');
+    traceBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      traceSingleCurve(curve);
+    });
+    // Visibility toggle
+    const toggleBtn = row.querySelector('[data-act="toggle"]');
+    toggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      curve.enabled = !curve.enabled;
+      renderCurvesList();
+      drawExtractionCanvas();
+    });
+    // Clear all points for this curve (only present if traced)
+    const clearBtn = row.querySelector('[data-act="clear"]');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        curve.points = [];
+        curve.traced = false;
+        renderCurvesList();
+        drawExtractionCanvas();
+        updateExtractStatus();
+      });
+    }
+    // Click row to make it the active curve (so canvas clicks affect it)
+    row.addEventListener('click', () => {
+      ext.activeCurveId = curve.id;
+      renderCurvesList();
+      drawExtractionCanvas();
+    });
+    list.appendChild(row);
+  });
+}
+
+function traceSingleCurve(curve, opts) {
+  const ext = State.extraction;
+  if (!ext) return;
+  const ctx = ext.canvas.getContext('2d');
+  const id = ctx.getImageData(0, 0, ext.canvas.width, ext.canvas.height);
+  const fresh = traceCurveByColor(id, ext.plotBox, { color: curve.color }, opts || {});
+  curve.points = fresh.points;
+  curve.traced = true;
+  curve.dashedLike = !!fresh.dashedLike;
+  ext.activeCurveId = curve.id;
+  recomputeDataValues();
+  renderCurvesList();
+  drawExtractionCanvas();
+  updateExtractStatus();
+  const styleNote = curve.dashedLike ? ' (dashed/dotted style detected — gaps filled)' : '';
+  toast(`Traced ${fresh.points.length} points for "${curve.name}"${styleNote}.`, 'ok', 4500);
+}
+
+function updateExtractStatus() {
+  const ext = State.extraction;
+  if (!ext) return;
+  const traced = ext.curves.filter(c => c.traced);
+  const totalPts = traced.reduce((s, c) => s + c.points.length, 0);
+  $('#extract-status').textContent =
+    `${ext.curves.length} candidate${ext.curves.length === 1 ? '' : 's'} · ${traced.length} traced · ${totalPts} points`;
+}
+
+function drawExtractionCanvas() {
+  const ext = State.extraction;
+  const canvas = $('#extract-canvas');
+  const wrap = canvas.parentElement;
+  // Determine display size
+  const maxW = wrap.clientWidth - 36;
+  const ratio = ext.image.height / ext.image.width;
+  const cssW = Math.min(maxW, ext.image.width);
+  const cssH = cssW * ratio;
+  canvas.style.width = cssW + 'px';
+  canvas.style.height = cssH + 'px';
+  canvas.width = ext.image.width;
+  canvas.height = ext.image.height;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  // Draw the source image
+  ctx.drawImage(ext.bitmap, 0, 0);
+
+  // Plot box outline
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(180, 68, 31, 0.7)';
+  ctx.setLineDash([8, 4]);
+  ctx.strokeRect(ext.plotBox.left, ext.plotBox.top, ext.plotBox.width, ext.plotBox.height);
+  ctx.setLineDash([]);
+
+  // For each curve, draw color swatches showing detected colors so user can click
+  // the swatch in the legend area, even if not yet traced.
+  // We don't have legend coords reliably, so just rely on side panel + canvas click on color match.
+
+  // Draw points per curve
+  ext.curves.forEach(curve => {
+    if (!curve.enabled) return;
+    if (!curve.traced || !curve.points.length) return;
+    const isActive = curve.id === ext.activeCurveId;
+    // Connecting line first (under points)
+    ctx.strokeStyle = curve.colorHex;
+    ctx.lineWidth = isActive ? 2 : 1.2;
+    ctx.globalAlpha = isActive ? 0.5 : 0.3;
+    ctx.beginPath();
+    curve.points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.px, p.py);
+      else ctx.lineTo(p.px, p.py);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Points (circle for auto-traced, square for manually-added)
+    ctx.fillStyle = curve.colorHex;
+    ctx.strokeStyle = isActive ? '#1a1611' : '#fff';
+    ctx.lineWidth = isActive ? 1.5 : 1;
+    const radius = isActive ? 4 : 3;
+    curve.points.forEach(p => {
+      if (p.manual) {
+        // Square marker for manually-added points
+        const s = radius + 1;
+        ctx.beginPath();
+        ctx.rect(p.px - s, p.py - s, s * 2, s * 2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    });
+  });
+
+  // Draw calibration reference markers if set
+  const mcal = ext.calibration?.manual;
+  if (mcal) {
+    const drawMarker = (px, py, label, color) => {
+      if (!px) return;
+      // Halo
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.beginPath();
+      ctx.arc(px.x, py != null ? py : px.y, 14, 0, Math.PI * 2);
+      ctx.fill();
+      // Crosshair
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(px.x - 10, px.y);
+      ctx.lineTo(px.x + 10, px.y);
+      ctx.moveTo(px.x, px.y - 10);
+      ctx.lineTo(px.x, px.y + 10);
+      ctx.stroke();
+      // Center dot
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(px.x, px.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Label
+      ctx.font = 'bold 13px JetBrains Mono';
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = color;
+      ctx.fillRect(px.x + 12, px.y - 9, tw + 8, 16);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, px.x + 16, px.y + 3);
+    };
+    drawMarker(mcal.x1Px, null, 'X1', '#b4441f');
+    drawMarker(mcal.x2Px, null, 'X2', '#b4441f');
+    drawMarker(mcal.y1Px, null, 'Y1', '#4a6b8a');
+    drawMarker(mcal.y2Px, null, 'Y2', '#4a6b8a');
+    // Connect X1—X2 and Y1—Y2 with dashed lines
+    ctx.setLineDash([6, 4]);
+    ctx.lineWidth = 1.5;
+    if (mcal.x1Px && mcal.x2Px) {
+      ctx.strokeStyle = 'rgba(180, 68, 31, 0.5)';
+      ctx.beginPath();
+      ctx.moveTo(mcal.x1Px.x, mcal.x1Px.y);
+      ctx.lineTo(mcal.x2Px.x, mcal.x2Px.y);
+      ctx.stroke();
+    }
+    if (mcal.y1Px && mcal.y2Px) {
+      ctx.strokeStyle = 'rgba(74, 107, 138, 0.5)';
+      ctx.beginPath();
+      ctx.moveTo(mcal.y1Px.x, mcal.y1Px.y);
+      ctx.lineTo(mcal.y2Px.x, mcal.y2Px.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Draw lasso outline if active
+  if (ext.lasso && ext.lasso.length > 1) {
+    ctx.strokeStyle = '#b4441f';
+    ctx.fillStyle = 'rgba(180, 68, 31, 0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ext.lasso.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Update mode bar visual state
+  $$('#mode-bar button').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === ext.interactionMode);
+  });
+
+  // Update cursor based on mode
+  if (ext.interactionMode === 'erase' || ext.interactionMode === 'lasso' || ext.interactionMode === 'add' || ext.interactionMode === 'calibrate') {
+    canvas.style.cursor = 'crosshair';
+  } else {
+    canvas.style.cursor = 'pointer';
+  }
+}
+
+// Canvas → image pixel coordinates
+function canvasToImageCoord(canvas, e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * sx,
+    y: (e.clientY - rect.top) * sy,
+  };
+}
+
+// Find the curve whose color best matches the pixel at (x, y) in the source image
+function findCurveAtPixel(x, y) {
+  const ext = State.extraction;
+  if (!ext) return null;
+  // Sample a small neighborhood of pixels and find the dominant non-white color
+  const ctx = ext.canvas.getContext('2d');
+  const r = 5;
+  const x0 = Math.max(0, Math.floor(x - r));
+  const y0 = Math.max(0, Math.floor(y - r));
+  const w = Math.min(ext.canvas.width - x0, r * 2);
+  const h = Math.min(ext.canvas.height - y0, r * 2);
+  if (w <= 0 || h <= 0) return null;
+  const data = ctx.getImageData(x0, y0, w, h).data;
+  // Average non-white, non-axis pixels
+  let cr = 0, cg = 0, cb = 0, count = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const R = data[i], G = data[i+1], B = data[i+2], A = data[i+3];
+    if (A < 200) continue;
+    if (R > 235 && G > 235 && B > 235) continue;
+    cr += R; cg += G; cb += B; count++;
+  }
+  if (!count) return null;
+  const sample = [cr/count, cg/count, cb/count];
+  // Find closest detected curve by color distance
+  let best = null, bestD = Infinity;
+  ext.curves.forEach(curve => {
+    const d = colorDistance(curve.color, sample);
+    if (d < bestD) { bestD = d; best = curve; }
+  });
+  if (bestD > 100) return null; // too far from any detected color
+  return best;
+}
+
+// Snap a click location to the nearest pixel matching a target colour within radius.
+// Used when manually adding points so the marker lands on the curve, not just where
+// the user clicked.
+function snapToColor(canvas, cx, cy, target, radius = 12) {
+  const ctx = canvas.getContext('2d');
+  const x0 = Math.max(0, Math.round(cx - radius));
+  const y0 = Math.max(0, Math.round(cy - radius));
+  const w = Math.min(canvas.width - x0, radius * 2);
+  const h = Math.min(canvas.height - y0, radius * 2);
+  if (w <= 0 || h <= 0) return null;
+  const data = ctx.getImageData(x0, y0, w, h).data;
+  let bestX = -1, bestY = -1, bestD = Infinity;
+  for (let yy = 0; yy < h; yy++) {
+    for (let xx = 0; xx < w; xx++) {
+      const i = (yy * w + xx) * 4;
+      const r = data[i], g = data[i+1], b = data[i+2], a = data[i+3];
+      if (a < 200) continue;
+      const dr = r - target[0], dg = g - target[1], db = b - target[2];
+      const cdist = dr * dr + dg * dg + db * db;
+      // accept any pixel within colour tolerance
+      if (cdist > 70 * 70 * 3) continue;
+      const px = x0 + xx, py = y0 + yy;
+      const sd = (px - cx) * (px - cx) + (py - cy) * (py - cy);
+      if (sd < bestD) { bestD = sd; bestX = px; bestY = py; }
+    }
+  }
+  if (bestX < 0) return null;
+  return { x: bestX, y: bestY };
+}
+
+// Find the closest point across all enabled traced curves within a pixel radius
+function findPointAt(x, y, maxRadius = 10) {
+  const ext = State.extraction;
+  if (!ext) return null;
+  let best = null, bestD = maxRadius * maxRadius;
+  ext.curves.forEach(curve => {
+    if (!curve.enabled || !curve.traced) return;
+    curve.points.forEach((p, idx) => {
+      const dx = p.px - x, dy = p.py - y;
+      const d = dx*dx + dy*dy;
+      if (d < bestD) { bestD = d; best = { curve, index: idx }; }
+    });
+  });
+  return best;
+}
+
+// Point-in-polygon test
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+    if (((yi > point.y) !== (yj > point.y)) &&
+        (point.x < (xj - xi) * (point.y - yi) / (yj - yi + 1e-10) + xi))
+      inside = !inside;
+  }
+  return inside;
+}
+
+function setupCanvasInteraction() {
+  const canvas = $('#extract-canvas');
+  if (canvas._wired) return;
+  canvas._wired = true;
+
+  let lassoDragging = false;
+
+  canvas.addEventListener('click', (e) => {
+    if (lassoDragging) return; // drag-end already handled
+    const ext = State.extraction;
+    if (!ext) return;
+    const c = canvasToImageCoord(canvas, e);
+
+    if (ext.interactionMode === 'pick') {
+      // Click on chart: if user clicked on/near an existing traced point, just select that curve.
+      // Otherwise sample pixel color and trace the matching detected curve.
+      const hit = findPointAt(c.x, c.y, 12);
+      if (hit) {
+        ext.activeCurveId = hit.curve.id;
+        renderCurvesList();
+        drawExtractionCanvas();
+        return;
+      }
+      const curve = findCurveAtPixel(c.x, c.y);
+      if (!curve) {
+        toast('No detected curve at that point. Try the side panel buttons.', 'warn');
+        return;
+      }
+      if (curve.traced) {
+        ext.activeCurveId = curve.id;
+        renderCurvesList();
+        drawExtractionCanvas();
+        toast(`Selected "${curve.name}" — click ◉ Extract again to re-trace`, 'ok');
+      } else {
+        traceSingleCurve(curve);
+      }
+    } else if (ext.interactionMode === 'add') {
+      // Add a point at the click location to the active curve.
+      // If no active curve, try to detect one by colour at the click; otherwise warn.
+      let curve = ext.curves.find(cu => cu.id === ext.activeCurveId);
+      if (!curve) {
+        const guess = findCurveAtPixel(c.x, c.y);
+        if (guess) {
+          curve = guess;
+          ext.activeCurveId = curve.id;
+        } else {
+          toast('Select a curve first (Pick mode), then switch to Add point', 'warn');
+          return;
+        }
+      }
+      // Snap the point to the nearest matching-colour pixel within a small radius
+      // for clean placement; if nothing matches, just use the raw click.
+      const snap = snapToColor(ext.canvas, c.x, c.y, curve.color, 12);
+      const px = snap ? snap.x : c.x;
+      const py = snap ? snap.y : c.y;
+      curve.points.push({ px, py, manual: true });
+      // Keep points sorted by x for clean lines
+      curve.points.sort((a, b) => a.px - b.px);
+      curve.traced = true; // count it as traced now
+      recomputeDataValues();
+      renderCurvesList();
+      drawExtractionCanvas();
+      updateExtractStatus();
+    } else if (ext.interactionMode === 'erase') {
+      // Find nearest traced point within radius and remove it
+      const hit = findPointAt(c.x, c.y, 14);
+      if (hit) {
+        hit.curve.points.splice(hit.index, 1);
+        renderCurvesList();
+        drawExtractionCanvas();
+        updateExtractStatus();
+      } else {
+        toast('No point within reach', 'warn', 1500);
+      }
+    } else if (ext.interactionMode === 'calibrate') {
+      handleCalibrateClick(c);
+    }
+  });
+
+  // Lasso (drag) for region erase
+  let lassoPath = null;
+  canvas.addEventListener('mousedown', (e) => {
+    const ext = State.extraction;
+    if (!ext || ext.interactionMode !== 'lasso') return;
+    lassoDragging = true;
+    lassoPath = [canvasToImageCoord(canvas, e)];
+    ext.lasso = lassoPath;
+    e.preventDefault();
+  });
+  canvas.addEventListener('mousemove', (e) => {
+    const ext = State.extraction;
+    if (!ext) return;
+    if (ext.interactionMode === 'lasso' && lassoDragging) {
+      lassoPath.push(canvasToImageCoord(canvas, e));
+      ext.lasso = lassoPath;
+      drawExtractionCanvas();
+    } else if (ext.interactionMode === 'pick' || ext.interactionMode === 'erase') {
+      // Hover preview: if hovering over a point, change cursor
+      const c = canvasToImageCoord(canvas, e);
+      const hit = findPointAt(c.x, c.y, 12);
+      canvas.style.cursor = hit
+        ? (ext.interactionMode === 'erase' ? 'pointer' : 'pointer')
+        : (ext.interactionMode === 'erase' ? 'crosshair' : 'pointer');
+    }
+  });
+  window.addEventListener('mouseup', (e) => {
+    const ext = State.extraction;
+    if (!ext) return;
+    if (ext.interactionMode === 'lasso' && lassoDragging) {
+      lassoDragging = false;
+      const path = ext.lasso;
+      ext.lasso = null;
+      if (path && path.length > 3) {
+        // Remove all points inside polygon (across all enabled traced curves)
+        let removed = 0;
+        ext.curves.forEach(curve => {
+          if (!curve.enabled || !curve.traced) return;
+          const before = curve.points.length;
+          curve.points = curve.points.filter(p => !pointInPolygon({ x: p.px, y: p.py }, path));
+          removed += (before - curve.points.length);
+        });
+        renderCurvesList();
+        drawExtractionCanvas();
+        updateExtractStatus();
+        toast(`Removed ${removed} point${removed === 1 ? '' : 's'}`, 'ok');
+      } else {
+        drawExtractionCanvas();
+      }
+      // Don't fire the click handler too
+      setTimeout(() => { lassoDragging = false; }, 50);
+    }
+  });
+
+  // Keyboard: 1=pick, 2=erase, 3=lasso, Backspace removes nearest to cursor
+  document.addEventListener('keydown', (e) => {
+    if (!State.extraction) return;
+    if ($('#stage-extract').classList.contains('hidden')) return;
+    const tag = (document.activeElement?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    if (e.key === '1') { State.extraction.interactionMode = 'pick'; drawExtractionCanvas(); }
+    else if (e.key === '2') { State.extraction.interactionMode = 'add'; drawExtractionCanvas(); }
+    else if (e.key === '3') { State.extraction.interactionMode = 'erase'; drawExtractionCanvas(); }
+    else if (e.key === '4') { State.extraction.interactionMode = 'lasso'; drawExtractionCanvas(); }
+  });
+}
+
+// -------------------- AXIS / RECOMPUTE --------------------
+function applyAxisInputs() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ext.calibration.xLabel = $('#ax-xlabel').value.trim();
+  ext.calibration.yLabel = $('#ax-ylabel').value.trim();
+  ext.calibration.xMin = parseFloat($('#ax-xmin').value);
+  ext.calibration.xMax = parseFloat($('#ax-xmax').value);
+  ext.calibration.yMin = parseFloat($('#ax-ymin').value);
+  ext.calibration.yMax = parseFloat($('#ax-ymax').value);
+  ext.calibration.xLog = $('#ax-xlog').checked;
+  ext.calibration.yLog = $('#ax-ylog').checked;
+  // Edge-based recompute clears manual calibration
+  if (ext.calibration.manual) ext.calibration.manual = null;
+  recomputeDataValues();
+  toast('Recomputed with edge values', 'ok');
+}
+
+// ---- Manual 4-point axis calibration ----
+function startCalibration() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ext.calibration.manual = { step: 0, x1Px: null, x2Px: null, y1Px: null, y2Px: null,
+                              x1Val: NaN, x2Val: NaN, y1Val: NaN, y2Val: NaN };
+  ext.interactionMode = 'calibrate';
+  updateCalibrationProgress();
+  $('#calibrate-progress').style.display = 'block';
+  $('#calibrate-values').style.display = 'none';
+  drawExtractionCanvas();
+  toast('Click point X1 — a known value on the X-axis (e.g. the leftmost tick)', 'ok', 5000);
+}
+
+function handleCalibrateClick(coord) {
+  const ext = State.extraction;
+  const m = ext.calibration.manual;
+  if (!m) return;
+  if (m.step === 0) { m.x1Px = { x: coord.x, y: coord.y }; m.step = 1; toast('Click point X2 — another known X-axis value (e.g. rightmost tick)', 'ok', 5000); }
+  else if (m.step === 1) { m.x2Px = { x: coord.x, y: coord.y }; m.step = 2; toast('Click point Y1 — a known value on the Y-axis (e.g. bottom tick)', 'ok', 5000); }
+  else if (m.step === 2) { m.y1Px = { x: coord.x, y: coord.y }; m.step = 3; toast('Click point Y2 — another known Y-axis value (e.g. top tick)', 'ok', 5000); }
+  else if (m.step === 3) {
+    m.y2Px = { x: coord.x, y: coord.y };
+    m.step = 4;
+    ext.interactionMode = 'pick';
+    $('#calibrate-values').style.display = 'block';
+    toast('All 4 reference points set. Now type their values and click Apply.', 'ok', 6000);
+  }
+  updateCalibrationProgress();
+  drawExtractionCanvas();
+}
+
+function updateCalibrationProgress() {
+  const m = State.extraction?.calibration?.manual;
+  const el = $('#calibrate-progress');
+  if (!el) return;
+  if (!m) { el.style.display = 'none'; return; }
+  const labels = ['X1', 'X2', 'Y1', 'Y2'];
+  const next = labels[m.step] || 'Done';
+  let txt = '';
+  for (let i = 0; i < 4; i++) {
+    const done = i < m.step;
+    const active = i === m.step;
+    txt += `<span style="color:${done ? 'var(--accent-2)' : active ? 'var(--accent)' : 'var(--ink-3)'}; font-weight:${active ? 700 : 400}; margin-right: 8px;">${done ? '✓' : active ? '→' : '·'} ${labels[i]}</span>`;
+  }
+  if (m.step >= 4) txt += '<br><span style="color:var(--accent-2); font-weight:700;">Now enter the values below ↓</span>';
+  else txt += `<br><span style="color:var(--ink-2); font-size: 11px;">Click point <strong>${next}</strong> on the chart</span>`;
+  el.innerHTML = txt;
+}
+
+function applyCalibration() {
+  const ext = State.extraction;
+  const m = ext?.calibration?.manual;
+  if (!m || m.step < 4) {
+    toast('Set all 4 reference points first', 'warn');
+    return;
+  }
+  const x1v = parseFloat($('#cal-x1v').value);
+  const x2v = parseFloat($('#cal-x2v').value);
+  const y1v = parseFloat($('#cal-y1v').value);
+  const y2v = parseFloat($('#cal-y2v').value);
+  if ([x1v, x2v, y1v, y2v].some(isNaN)) {
+    toast('Fill in all four values', 'warn');
+    return;
+  }
+  if (x1v === x2v || y1v === y2v) {
+    toast('X1 must differ from X2, and Y1 must differ from Y2', 'warn');
+    return;
+  }
+  m.x1Val = x1v; m.x2Val = x2v; m.y1Val = y1v; m.y2Val = y2v;
+
+  // Derive the equivalent edge-based xMin/xMax/yMin/yMax values from the manual calibration,
+  // so the status panel reads the right numbers and the edge fields aren't misleading.
+  // Compute what value sits at plotBox.left and plotBox.right (and top/bottom) using the
+  // same linear interpolation from the calibration reference points.
+  const interp = (px, p1, v1, p2, v2, log) => {
+    const f = (px - p1) / (p2 - p1);
+    if (log) {
+      const l1 = Math.log10(v1), l2 = Math.log10(v2);
+      return Math.pow(10, l1 + f * (l2 - l1));
+    }
+    return v1 + f * (v2 - v1);
+  };
+  ext.calibration.xMin = interp(ext.plotBox.left, m.x1Px.x, m.x1Val, m.x2Px.x, m.x2Val, ext.calibration.xLog);
+  ext.calibration.xMax = interp(ext.plotBox.right, m.x1Px.x, m.x1Val, m.x2Px.x, m.x2Val, ext.calibration.xLog);
+  // Y axis flip: pixel y increases downward, but calibration y2 is "above" y1 typically.
+  ext.calibration.yMin = interp(ext.plotBox.bottom, m.y1Px.y, m.y1Val, m.y2Px.y, m.y2Val, ext.calibration.yLog);
+  ext.calibration.yMax = interp(ext.plotBox.top, m.y1Px.y, m.y1Val, m.y2Px.y, m.y2Val, ext.calibration.yLog);
+
+  recomputeDataValues();
+  // Refresh side panel inputs and status display
+  $('#ax-xmin').value = formatNum(ext.calibration.xMin);
+  $('#ax-xmax').value = formatNum(ext.calibration.xMax);
+  $('#ax-ymin').value = formatNum(ext.calibration.yMin);
+  $('#ax-ymax').value = formatNum(ext.calibration.yMax);
+  renderExtraction();
+  toast(`Calibration applied · curves now span x∈[${formatNum(ext.calibration.xMin)}, ${formatNum(ext.calibration.xMax)}], y∈[${formatNum(ext.calibration.yMin)}, ${formatNum(ext.calibration.yMax)}]`, 'ok', 6000);
+}
+
+function clearCalibration() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ext.calibration.manual = null;
+  ext.interactionMode = 'pick';
+  $('#calibrate-progress').style.display = 'none';
+  $('#calibrate-values').style.display = 'none';
+  recomputeDataValues();
+  drawExtractionCanvas();
+  toast('Manual calibration cleared · using edge values', 'ok');
+}
+
+// -------------------- EXPORT --------------------
+// Helper: make sure ext.curves[*].points have up-to-date {x, y} data values.
+// Does NOT touch calibration mode. Safe to call before any export.
+function ensureCurrentDataValues() {
+  const ext = State.extraction;
+  if (!ext) return;
+  recomputeDataValues();
+}
+
+function exportCSV() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ensureCurrentDataValues();
+  const enabled = ext.curves.filter(c => c.enabled);
+  if (!enabled.length) { toast('No curves selected', 'warn'); return; }
+
+  // Build rows: each curve has its own (x, y) sequence; we output a long-format CSV
+  // (one row per point, plus a curve column) AND a wide-format option below.
+  // We'll go with long-format because curves have different x sampling — that's robust.
+  const rows = [];
+  enabled.forEach(c => {
+    c.points.forEach(p => {
+      rows.push({
+        curve: c.name,
+        [ext.calibration.xLabel || 'x']: p.x,
+        [ext.calibration.yLabel || 'y']: p.y,
+      });
+    });
+  });
+  const csv = Papa.unparse(rows);
+  const fname = safeName(State.filename || 'plot') + '_extracted.csv';
+  downloadBlob(new Blob([csv], { type: 'text/csv' }), fname);
+  toast(`Exported ${rows.length} points to ${fname}`, 'ok');
+}
+
+function exportTSV() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ensureCurrentDataValues();
+  const enabled = ext.curves.filter(c => c.enabled);
+  if (!enabled.length) { toast('No curves selected', 'warn'); return; }
+  let txt = `curve\t${ext.calibration.xLabel || 'x'}\t${ext.calibration.yLabel || 'y'}\n`;
+  enabled.forEach(c => {
+    c.points.forEach(p => {
+      txt += `${c.name}\t${p.x}\t${p.y}\n`;
+    });
+  });
+  navigator.clipboard.writeText(txt).then(
+    () => toast('TSV copied to clipboard', 'ok'),
+    () => toast('Clipboard unavailable', 'err')
+  );
+}
+
+function exportJSON() {
+  const ext = State.extraction;
+  if (!ext) return;
+  ensureCurrentDataValues();
+  const data = {
+    source: State.filename,
+    page: ext.image.page,
+    imageSource: ext.image.source,
+    calibration: ext.calibration,
+    plotBox: ext.plotBox,
+    curves: ext.curves.filter(c => c.enabled).map(c => ({
+      name: c.name,
+      color: c.colorHex,
+      points: c.points.map(p => ({ x: p.x, y: p.y, pixel_x: p.px, pixel_y: p.py })),
+    })),
+    extractedAt: new Date().toISOString(),
+  };
+  const fname = safeName(State.filename || 'plot') + '_extracted.json';
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), fname);
+  toast('JSON downloaded', 'ok');
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 100);
+}
+
+function safeName(s) {
+  return (s || 'plot').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_\-]/g, '_').slice(0, 60);
+}
+
+function formatNum(v) {
+  if (v == null || isNaN(v)) return '—';
+  const a = Math.abs(v);
+  if (a === 0) return '0';
+  if (a < 0.001 || a >= 100000) return v.toExponential(3);
+  if (a < 1) return v.toPrecision(4);
+  return parseFloat(v.toFixed(4)).toString();
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// -------------------- WIRE UP --------------------
+function init() {
+  // Upload
+  const dz = $('#upload-zone');
+  const fi = $('#file-input');
+  dz.addEventListener('click', () => fi.click());
+  dz.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fi.click(); } });
+  dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+  dz.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dz.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (f && /\.pdf$/i.test(f.name)) loadPdfFile(f);
+    else toast('Please drop a PDF file', 'warn');
+  });
+  fi.addEventListener('change', () => {
+    const f = fi.files[0];
+    if (f) loadPdfFile(f);
+    fi.value = '';
+  });
+
+  $('#btn-back-upload').addEventListener('click', () => setStage('upload'));
+  $('#btn-back-gallery').addEventListener('click', () => setStage('gallery'));
+  $('#btn-back-pages').addEventListener('click', () => {
+    setStage('gallery');
+    // Switch to pages tab
+    activateGalleryTab('pages');
+  });
+  $('#btn-confirm-crop').addEventListener('click', confirmCrop);
+  $('#btn-clear-crop').addEventListener('click', () => {
+    State.crop = null;
+    drawCropper();
+    updateCropFields();
+  });
+  ['crop-x', 'crop-y', 'crop-w', 'crop-h'].forEach(id => {
+    $('#' + id).addEventListener('change', readCropFields);
+  });
+
+  // Tabs
+  $$('#gallery-tabs .tab').forEach(t => {
+    t.addEventListener('click', () => activateGalleryTab(t.dataset.tab));
+  });
+
+  // Stage rail clickable for already-completed stages
+  $$('#stage-rail .stage-step').forEach(el => {
+    el.addEventListener('click', () => {
+      const s = el.dataset.stage;
+      if (s === 'upload') setStage('upload');
+      else if (s === 'gallery' && State.images.length) setStage('gallery');
+      else if (s === 'extract' && State.extraction) setStage('extract');
+    });
+  });
+
+  // Axis recompute (only on explicit click of the edge-based recompute button)
+  $('#btn-recompute').addEventListener('click', () => {
+    applyAxisInputs();
+    drawExtractionCanvas();
+    renderCurvesList();
+  });
+  // Labels can be edited freely without affecting calibration
+  ['ax-xlabel','ax-ylabel'].forEach(id => {
+    $('#' + id).addEventListener('change', () => {
+      const ext = State.extraction;
+      if (!ext) return;
+      ext.calibration.xLabel = $('#ax-xlabel').value.trim();
+      ext.calibration.yLabel = $('#ax-ylabel').value.trim();
+    });
+  });
+
+  // Manual calibration
+  $('#btn-start-calibrate').addEventListener('click', startCalibration);
+  $('#btn-apply-calibrate').addEventListener('click', applyCalibration);
+  $('#btn-clear-calibrate').addEventListener('click', clearCalibration);
+
+  // Re-trace
+  $('#btn-retrace').addEventListener('click', async () => {
+    if (!State.extraction) return;
+    showLoading('Re-tracing curves');
+    setTimeout(() => {
+      const ext = State.extraction;
+      const ctx = ext.canvas.getContext('2d');
+      const id = ctx.getImageData(0, 0, ext.canvas.width, ext.canvas.height);
+      const colors = detectCurveColors(id, ext.plotBox);
+      const newCurves = colors.map(cc => traceCurveByColor(id, ext.plotBox, cc))
+        .filter(c => c.points.length >= 5);
+      ext.curves = newCurves.map((cu, i) => ({
+        id: 'curve_' + (i+1),
+        color: cu.color,
+        colorHex: rgbToHex(cu.color),
+        points: cu.points,
+        enabled: true,
+        name: ext.curves[i]?.name || `Curve ${i+1}`,
+      }));
+      recomputeDataValues();
+      renderExtraction();
+      hideLoading();
+      toast('Re-traced', 'ok');
+    }, 30);
+  });
+
+  // Add curve manually (by color)
+  $('#btn-add-curve').addEventListener('click', () => {
+    const hex = prompt('Enter the curve colour as hex (e.g. #ff0000):', '#ff0000');
+    if (!hex) return;
+    const rgb = hexToRgb(hex);
+    const ext = State.extraction;
+    const ctx = ext.canvas.getContext('2d');
+    const id = ctx.getImageData(0, 0, ext.canvas.width, ext.canvas.height);
+    const traced = traceCurveByColor(id, ext.plotBox, { color: rgb });
+    if (traced.points.length < 5) {
+      toast('No curve found for that colour', 'warn');
+      return;
+    }
+    ext.curves.push({
+      id: 'curve_' + (ext.curves.length + 1),
+      color: rgb,
+      colorHex: hex,
+      points: traced.points,
+      enabled: true,
+      name: `Curve ${ext.curves.length + 1}`,
+    });
+    recomputeDataValues();
+    renderExtraction();
+    toast(`Added curve with ${traced.points.length} points`, 'ok');
+  });
+
+  // Exports
+  $('#btn-export-csv').addEventListener('click', exportCSV);
+  $('#btn-export-tsv').addEventListener('click', exportTSV);
+  $('#btn-export-json').addEventListener('click', exportJSON);
+
+  // Mode bar
+  $$('#mode-bar button').forEach(b => {
+    b.addEventListener('click', () => {
+      if (!State.extraction) return;
+      State.extraction.interactionMode = b.dataset.mode;
+      const hints = {
+        pick: 'Click any curve on the chart to extract it (or pick from the side panel)',
+        add: 'Click on a curve to add a single point at that exact location · Snaps to the curve colour',
+        erase: 'Click a stray point to delete it · Hover shows a pointer when one is in reach',
+        lasso: 'Drag around stray points to delete them all in one go',
+        calibrate: 'Click 4 reference points on the chart in order: X1, X2, Y1, Y2',
+      };
+      $('#mode-hint').textContent = hints[b.dataset.mode];
+      drawExtractionCanvas();
+    });
+  });
+
+  // Canvas interaction (clicks for picking curves, erasing points, lasso)
+  setupCanvasInteraction();
+}
+
+init();
+</script>
+</body>
+</html>
