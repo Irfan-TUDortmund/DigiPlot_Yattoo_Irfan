@@ -1062,6 +1062,7 @@ footer.colophon {
           <button data-mode="add" title="Click on a curve to add a single point at that location (key 2)"><strong>2.</strong> Add point</button>
           <button data-mode="erase" title="Click a stray point to delete it (key 3)"><strong>3.</strong> Erase point</button>
           <button data-mode="lasso" title="Drag a region to delete all points inside (key 4)"><strong>4.</strong> Lasso erase</button>
+          <button data-mode="calibrate" title="Drag the axis-frame handles to calibrate (key 5)"><strong>5.</strong> Calibrate</button>
         </div>
         <canvas id="extract-canvas" class="workspace-canvas"></canvas>
         <div class="workspace-canvas-controls">
@@ -1085,29 +1086,41 @@ footer.colophon {
               Two ways to calibrate. Manual is the most accurate for tricky charts.
             </p>
 
-            <!-- Manual calibration -->
+            <!-- Manual axis-frame calibration -->
             <div style="border: 1px solid var(--rule-2); padding: 10px; background: var(--paper); margin-bottom: 12px;">
               <div style="font-family: var(--mono); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; font-weight: 700;">
-                ◉ Manual — 4 reference points
+                ◉ Axis-frame — drag two perpendicular lines
               </div>
-              <p style="font-size: 11px; color: var(--ink-3); margin-bottom: 10px;">
-                Click "Calibrate" then click 4 points on the chart in this order:
-                <strong style="color:var(--accent)">X1</strong>, <strong style="color:var(--accent)">X2</strong> (two known X positions on the X-axis),
-                then <strong style="color:var(--accent-3)">Y1</strong>, <strong style="color:var(--accent-3)">Y2</strong> (two known Y positions on the Y-axis).
+              <p style="font-size: 11px; color: var(--ink-3); margin-bottom: 10px; line-height: 1.45;">
+                Drag the <strong style="color:var(--accent-2)">⬛ origin handle</strong> onto where the axes meet,
+                the <strong style="color:var(--accent)">● X-end handle</strong> to a known X-axis tick, and
+                the <strong style="color:var(--accent-3)">● Y-end handle</strong> to a known Y-axis tick.
+                The horizontal and vertical lines stay locked to the origin so they always cross perfectly.
               </p>
-              <button class="btn btn-accent btn-sm" id="btn-start-calibrate" style="width: 100%; margin-bottom: 10px;">Start manual calibration</button>
-              <div id="calibrate-progress" style="display:none; font-family: var(--mono); font-size: 11px; color: var(--ink-2); padding: 8px; background: var(--paper-2); border: 1px dashed var(--accent); margin-bottom: 10px;"></div>
+              <div class="btn-row" style="margin-bottom: 10px;">
+                <button class="btn btn-accent btn-sm" id="btn-start-calibrate" style="flex: 1;">Show frame</button>
+                <button class="btn btn-outline btn-sm" id="btn-snap-calibrate" title="Position the frame on the auto-detected plot box">Snap to detected box</button>
+              </div>
+              <div id="calibrate-progress" style="display:none; font-family: var(--mono); font-size: 10px; color: var(--ink-2); padding: 8px; background: var(--paper-2); border: 1px dashed var(--accent); margin-bottom: 10px; line-height: 1.55;"></div>
               <div id="calibrate-values" style="display:none;">
+                <div style="font-family: var(--mono); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px;">Enter the data values at each handle</div>
                 <div class="axis-fields">
-                  <div class="field"><label>X1 value</label><input id="cal-x1v" type="number" step="any"></div>
-                  <div class="field"><label>X2 value</label><input id="cal-x2v" type="number" step="any"></div>
-                  <div class="field"><label>Y1 value</label><input id="cal-y1v" type="number" step="any"></div>
-                  <div class="field"><label>Y2 value</label><input id="cal-y2v" type="number" step="any"></div>
+                  <div class="field"><label>Origin · X value</label><input id="cal-ox" type="number" step="any" value="0"></div>
+                  <div class="field"><label>Origin · Y value</label><input id="cal-oy" type="number" step="any" value="0"></div>
+                  <div class="field"><label>X-end value</label><input id="cal-xend" type="number" step="any"></div>
+                  <div class="field"><label>Y-end value</label><input id="cal-yend" type="number" step="any"></div>
+                </div>
+                <div style="margin-top: 8px; display: flex; gap: 16px;">
+                  <label class="field-checkbox"><input type="checkbox" id="cal-xlog"> X log scale</label>
+                  <label class="field-checkbox"><input type="checkbox" id="cal-ylog"> Y log scale</label>
                 </div>
                 <div class="btn-row" style="margin-top: 10px;">
                   <button class="btn btn-sm" id="btn-apply-calibrate">Apply calibration</button>
                   <button class="btn btn-ghost btn-sm" id="btn-clear-calibrate">Clear</button>
                 </div>
+                <p style="margin-top: 8px; font-size: 10px; color: var(--ink-3); line-height: 1.5;">
+                  Tip: arrow keys nudge the selected handle by 1 px (Shift+arrow = 5 px). Click a handle on the chart to select it.
+                </p>
               </div>
             </div>
 
@@ -1951,72 +1964,147 @@ function loadImageBitmap(dataUrl) {
 }
 
 // -------- Plot box detection --------
+// Strategy (much more robust than naive column/row sums):
+//   1. Mark every "axis-ink" pixel (dark + low-saturation).
+//   2. For every column, compute the LONGEST CONTIGUOUS VERTICAL RUN of axis pixels.
+//      A real Y-axis is one unbroken line; tick marks, gridlines and tilted text
+//      contribute many short runs that lose this competition.
+//   3. Same for rows → finds horizontal axis line.
+//   4. The L-corner (left axis ∩ bottom axis) is the most robust anchor of the plot
+//      because almost every chart has those two. We then look for the right & top
+//      borders independently — and if no strong border line exists, we use the
+//      *extent* of the bottom-axis run to define the right edge, and the extent of
+//      the left-axis run to define the top edge. That gracefully handles "open"
+//      plots that only show two axes (very common in scientific publications).
 function detectPlotBox(imageData) {
-  // Strategy:
-  // 1. Compute "darkness" (1 - brightness) for each pixel; treat as candidate axis pixels.
-  // 2. Project to row & column sums of "axis-like" pixels (dark + low saturation).
-  // 3. Find the strongest left vertical line (max column sum in the left half) and the
-  //    strongest bottom horizontal line (max row sum in the bottom half).
-  // 4. Find right and top by extending until the dark line disappears (or by symmetry).
   const w = imageData.width, h = imageData.height;
   const data = imageData.data;
-  const isAxisPixel = new Uint8Array(w * h);
+
+  // 1) Axis-ink mask
+  const ink = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const r = data[i], g = data[i+1], b = data[i+2];
-      const max = Math.max(r,g,b), min = Math.min(r,g,b);
-      const sat = max === 0 ? 0 : (max - min) / max;
+      const mx = Math.max(r,g,b), mn = Math.min(r,g,b);
+      const sat = mx === 0 ? 0 : (mx - mn) / mx;
       const lum = (r + g + b) / 3;
-      // axis pixels: dark and low saturation (black/grey)
-      if (lum < 100 && sat < 0.25) isAxisPixel[y*w+x] = 1;
+      if (lum < 110 && sat < 0.25) ink[y*w+x] = 1;
     }
   }
 
-  // Column sums (for vertical lines) and row sums (horizontal lines)
-  const colSum = new Int32Array(w);
-  const rowSum = new Int32Array(h);
+  // 2) For each column: longest vertical run + extent (firstY, lastY) of that run
+  const colRun = new Int32Array(w);
+  const colRunStart = new Int32Array(w);
+  const colRunEnd = new Int32Array(w);
+  for (let x = 0; x < w; x++) {
+    let cur = 0, curStart = 0;
+    let best = 0, bestStart = 0, bestEnd = 0;
+    for (let y = 0; y < h; y++) {
+      if (ink[y*w+x]) {
+        if (cur === 0) curStart = y;
+        cur++;
+        if (cur > best) { best = cur; bestStart = curStart; bestEnd = y; }
+      } else {
+        cur = 0;
+      }
+    }
+    colRun[x] = best;
+    colRunStart[x] = bestStart;
+    colRunEnd[x] = bestEnd;
+  }
+  // Same for rows
+  const rowRun = new Int32Array(h);
+  const rowRunStart = new Int32Array(h);
+  const rowRunEnd = new Int32Array(h);
   for (let y = 0; y < h; y++) {
+    let cur = 0, curStart = 0;
+    let best = 0, bestStart = 0, bestEnd = 0;
+    const off = y * w;
     for (let x = 0; x < w; x++) {
-      if (isAxisPixel[y*w+x]) { colSum[x]++; rowSum[y]++; }
+      if (ink[off+x]) {
+        if (cur === 0) curStart = x;
+        cur++;
+        if (cur > best) { best = cur; bestStart = curStart; bestEnd = x; }
+      } else {
+        cur = 0;
+      }
+    }
+    rowRun[y] = best;
+    rowRunStart[y] = bestStart;
+    rowRunEnd[y] = bestEnd;
+  }
+
+  // 3) Pick the strongest LEFT vertical line (longest run in the left half)
+  //    and strongest BOTTOM horizontal line (longest run in the bottom half).
+  //    Search inset by ~2% to ignore page borders/figure frames.
+  const xPad = Math.floor(w * 0.02);
+  const yPad = Math.floor(h * 0.02);
+
+  let leftBest = 0, leftX = -1;
+  for (let x = xPad; x < Math.floor(w * 0.5); x++) {
+    if (colRun[x] > leftBest) { leftBest = colRun[x]; leftX = x; }
+  }
+  let bottomBest = 0, bottomY = -1;
+  for (let y = Math.floor(h * 0.5); y < h - yPad; y++) {
+    if (rowRun[y] > bottomBest) { bottomBest = rowRun[y]; bottomY = y; }
+  }
+  // RIGHT and TOP are looked for as separate strong lines; otherwise we will derive
+  // them from the extent of the L-corner lines.
+  let rightBest = 0, rightX = -1;
+  for (let x = Math.floor(w * 0.5); x < w - xPad; x++) {
+    if (colRun[x] > rightBest) { rightBest = colRun[x]; rightX = x; }
+  }
+  let topBest = 0, topY = -1;
+  for (let y = yPad; y < Math.floor(h * 0.5); y++) {
+    if (rowRun[y] > topBest) { topBest = rowRun[y]; topY = y; }
+  }
+
+  // 4) Validity thresholds — a real axis line must span at least 30% of the chart
+  const MIN_V = Math.floor(h * 0.30);
+  const MIN_H = Math.floor(w * 0.30);
+  const haveLeft = leftBest >= MIN_V;
+  const haveBottom = bottomBest >= MIN_H;
+  const haveRight = rightBest >= MIN_V;
+  const haveTop = topBest >= MIN_H;
+
+  // Decide left, bottom (these are the must-haves; if missing, fall back gracefully)
+  if (!haveLeft) leftX = Math.floor(w * 0.10);
+  if (!haveBottom) bottomY = Math.floor(h * 0.90);
+
+  // For right edge: if no strong right axis, use the rightmost extent of the
+  // bottom axis run (the bottom axis ends where the plot ends).
+  if (!haveRight || rightX <= leftX + 5) {
+    rightX = haveBottom ? rowRunEnd[bottomY] : w - xPad;
+  }
+  // For top edge: similar — use the topmost extent of the left axis run.
+  if (!haveTop || topY >= bottomY - 5) {
+    topY = haveLeft ? colRunStart[leftX] : yPad;
+  }
+
+  // 5) Tighten the corners: the corner pixel should be at the intersection of the
+  //    left-axis run and the bottom-axis run. If the left axis's bottom extent is
+  //    very close to bottomY, snap them so they meet exactly.
+  if (haveLeft && haveBottom) {
+    if (Math.abs(colRunEnd[leftX] - bottomY) < 6) {
+      // they already meet — leave bottomY as is
+    }
+    if (Math.abs(rowRunStart[bottomY] - leftX) < 6) {
+      // they already meet
     }
   }
 
-  // Find left axis: strongest vertical line in the left 50%
-  const leftSearchEnd = Math.floor(w * 0.5);
-  let leftBest = 0, leftX = 0;
-  for (let x = Math.floor(w*0.02); x < leftSearchEnd; x++) {
-    if (colSum[x] > leftBest) { leftBest = colSum[x]; leftX = x; }
-  }
+  // 6) Final sanity: ensure plot box is reasonably sized
+  if (rightX - leftX < 30) { leftX = Math.floor(w * 0.10); rightX = w - xPad; }
+  if (bottomY - topY < 30) { topY = yPad; bottomY = Math.floor(h * 0.90); }
 
-  // Right axis: strongest vertical line in the right 50%
-  const rightSearchStart = Math.floor(w * 0.5);
-  let rightBest = 0, rightX = w - 1;
-  for (let x = rightSearchStart; x < w - Math.floor(w*0.02); x++) {
-    if (colSum[x] > rightBest) { rightBest = colSum[x]; rightX = x; }
-  }
-
-  // Bottom axis: strongest horizontal line in bottom 50%
-  const bottomSearchStart = Math.floor(h * 0.5);
-  let bottomBest = 0, bottomY = h - 1;
-  for (let y = bottomSearchStart; y < h - Math.floor(h*0.02); y++) {
-    if (rowSum[y] > bottomBest) { bottomBest = rowSum[y]; bottomY = y; }
-  }
-
-  // Top: strongest horizontal line in top 50%
-  const topSearchEnd = Math.floor(h * 0.5);
-  let topBest = 0, topY = 0;
-  for (let y = Math.floor(h*0.02); y < topSearchEnd; y++) {
-    if (rowSum[y] > topBest) { topBest = rowSum[y]; topY = y; }
-  }
-
-  // Sanity-check: thresholds. If no clear top/right axes, set them to the image extents.
-  // A "real" axis line should span at least 30% of the orthogonal dimension.
-  const minVertSpan = h * 0.3, minHorzSpan = w * 0.3;
-  if (rightBest < minVertSpan) rightX = w - 2;
-  if (topBest < minHorzSpan) topY = 2;
-  if (leftBest < minVertSpan) leftX = Math.floor(w * 0.1);
-  if (bottomBest < minHorzSpan) bottomY = Math.floor(h * 0.9);
+  // Confidence: how much of each side was covered by an actual long ink line
+  const conf = (
+    (haveLeft ? leftBest / h : 0.3) +
+    (haveBottom ? bottomBest / w : 0.3) +
+    (haveRight ? 0.5 + 0.5 * rightBest / h : 0.25) +
+    (haveTop ? 0.5 + 0.5 * topBest / w : 0.25)
+  ) / 4;
 
   return {
     left: leftX,
@@ -2025,7 +2113,8 @@ function detectPlotBox(imageData) {
     bottom: bottomY,
     width: rightX - leftX,
     height: bottomY - topY,
-    confidence: Math.min(1, (leftBest + bottomBest) / (h + w)),
+    confidence: Math.max(0, Math.min(1, conf)),
+    sides: { haveLeft, haveBottom, haveRight, haveTop },
   };
 }
 
@@ -2426,31 +2515,40 @@ function matchLegend(texts, curves, plotBox) {
 
 // -------- Pixel <-> data coordinate transform --------
 function pixelToData(px, py, plotBox, calibration) {
-  // If a manual 4-point calibration is set, use it directly. The two X reference
-  // points define the X axis mapping (their pixel X positions and target values),
-  // and likewise the two Y reference points for Y. Each axis is computed independently
-  // so the user doesn't have to click points exactly on a perfect axis line.
-  const manual = calibration.manual;
+  // PRIORITY 1: axis-frame calibration. The user has placed an origin pixel and
+  // two end pixels (X-end, Y-end) on the chart, plus told us the data values at
+  // those positions. We compute the X axis from origin → x-end, and Y axis from
+  // origin → y-end. The two axes are independent — they share only the origin.
+  // This is the simplest and most robust scheme: it requires no perpendicularity
+  // beyond what the user has already enforced visually.
+  const f = calibration.frame;
   let xVal, yVal;
-  if (manual && manual.x1Px && manual.x2Px && !isNaN(manual.x1Val) && !isNaN(manual.x2Val) &&
-      manual.y1Px && manual.y2Px && !isNaN(manual.y1Val) && !isNaN(manual.y2Val)) {
-    const fx = (px - manual.x1Px.x) / (manual.x2Px.x - manual.x1Px.x);
-    const fy = (py - manual.y1Px.y) / (manual.y2Px.y - manual.y1Px.y);
+  if (f && f.applied &&
+      f.origin && f.xEnd && f.yEnd &&
+      !isNaN(f.originXVal) && !isNaN(f.originYVal) &&
+      !isNaN(f.xEndVal) && !isNaN(f.yEndVal) &&
+      f.originXVal !== f.xEndVal && f.originYVal !== f.yEndVal) {
+    // X axis: linear interpolation along the horizontal line in pixel space.
+    // We use only the X pixel coordinate of origin and X-end (because the line
+    // is meant to be horizontal). If user has tilted things slightly that's OK —
+    // we still project onto the (origin → x-end) direction by the X component.
+    const fx = (px - f.origin.x) / (f.xEnd.x - f.origin.x);
+    const fy = (py - f.origin.y) / (f.yEnd.y - f.origin.y);
     if (calibration.xLog) {
-      const l1 = Math.log10(manual.x1Val), l2 = Math.log10(manual.x2Val);
+      const l1 = Math.log10(f.originXVal), l2 = Math.log10(f.xEndVal);
       xVal = Math.pow(10, l1 + fx * (l2 - l1));
     } else {
-      xVal = manual.x1Val + fx * (manual.x2Val - manual.x1Val);
+      xVal = f.originXVal + fx * (f.xEndVal - f.originXVal);
     }
     if (calibration.yLog) {
-      const l1 = Math.log10(manual.y1Val), l2 = Math.log10(manual.y2Val);
+      const l1 = Math.log10(f.originYVal), l2 = Math.log10(f.yEndVal);
       yVal = Math.pow(10, l1 + fy * (l2 - l1));
     } else {
-      yVal = manual.y1Val + fy * (manual.y2Val - manual.y1Val);
+      yVal = f.originYVal + fy * (f.yEndVal - f.originYVal);
     }
     return { x: xVal, y: yVal };
   }
-  // Otherwise use edge-based calibration (auto-detected or user-entered)
+  // PRIORITY 2: edge-based calibration (auto-detected or user-entered xMin/xMax/etc.)
   const fx = (px - plotBox.left) / plotBox.width;
   const fy = (plotBox.bottom - py) / plotBox.height; // flip y
   if (calibration.xLog) {
@@ -2491,12 +2589,11 @@ function renderExtraction() {
   // Detect status panel
   const ds = $('#detect-status');
   ds.innerHTML = '';
-  const isManual = !!(ext.calibration?.manual && ext.calibration.manual.step >= 4
-                      && !isNaN(ext.calibration.manual.x1Val) && !isNaN(ext.calibration.manual.x2Val));
+  const isFrameCal = !!(ext.calibration?.frame?.applied);
   const items = [
     ['Plot box', `${ext.plotBox.width} × ${ext.plotBox.height} px`],
     ['Confidence', `${(ext.plotBox.confidence * 100).toFixed(0)}%`],
-    ['Calibration', isManual ? `<span class="ok">manual (4 points)</span>` : `<span>edge-based</span>`],
+    ['Calibration', isFrameCal ? `<span class="ok">axis-frame (manual)</span>` : `<span>edge-based (auto)</span>`],
     ['X label', ext.calibration.xLabel || `<span class="warn">not detected</span>`],
     ['Y label', ext.calibration.yLabel || `<span class="warn">not detected</span>`],
     ['X range', `${formatNum(ext.calibration.xMin)} → ${formatNum(ext.calibration.xMax)}`],
@@ -2703,60 +2800,10 @@ function drawExtractionCanvas() {
     });
   });
 
-  // Draw calibration reference markers if set
-  const mcal = ext.calibration?.manual;
-  if (mcal) {
-    const drawMarker = (px, py, label, color) => {
-      if (!px) return;
-      // Halo
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.beginPath();
-      ctx.arc(px.x, py != null ? py : px.y, 14, 0, Math.PI * 2);
-      ctx.fill();
-      // Crosshair
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(px.x - 10, px.y);
-      ctx.lineTo(px.x + 10, px.y);
-      ctx.moveTo(px.x, px.y - 10);
-      ctx.lineTo(px.x, px.y + 10);
-      ctx.stroke();
-      // Center dot
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(px.x, px.y, 3, 0, Math.PI * 2);
-      ctx.fill();
-      // Label
-      ctx.font = 'bold 13px JetBrains Mono';
-      const tw = ctx.measureText(label).width;
-      ctx.fillStyle = color;
-      ctx.fillRect(px.x + 12, px.y - 9, tw + 8, 16);
-      ctx.fillStyle = '#fff';
-      ctx.fillText(label, px.x + 16, px.y + 3);
-    };
-    drawMarker(mcal.x1Px, null, 'X1', '#b4441f');
-    drawMarker(mcal.x2Px, null, 'X2', '#b4441f');
-    drawMarker(mcal.y1Px, null, 'Y1', '#4a6b8a');
-    drawMarker(mcal.y2Px, null, 'Y2', '#4a6b8a');
-    // Connect X1—X2 and Y1—Y2 with dashed lines
-    ctx.setLineDash([6, 4]);
-    ctx.lineWidth = 1.5;
-    if (mcal.x1Px && mcal.x2Px) {
-      ctx.strokeStyle = 'rgba(180, 68, 31, 0.5)';
-      ctx.beginPath();
-      ctx.moveTo(mcal.x1Px.x, mcal.x1Px.y);
-      ctx.lineTo(mcal.x2Px.x, mcal.x2Px.y);
-      ctx.stroke();
-    }
-    if (mcal.y1Px && mcal.y2Px) {
-      ctx.strokeStyle = 'rgba(74, 107, 138, 0.5)';
-      ctx.beginPath();
-      ctx.moveTo(mcal.y1Px.x, mcal.y1Px.y);
-      ctx.lineTo(mcal.y2Px.x, mcal.y2Px.y);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
+  // Draw axis-frame calibration overlay if a frame exists
+  const frame = ext.calibration?.frame;
+  if (frame && frame.origin && frame.xEnd && frame.yEnd) {
+    drawAxisFrame(ctx, frame, ext);
   }
 
   // Draw lasso outline if active
@@ -2898,16 +2945,55 @@ function setupCanvasInteraction() {
   canvas._wired = true;
 
   let lassoDragging = false;
+  // Calibration drag state — what handle is being dragged + last mouse coord
+  let calDragging = null; // 'origin' | 'xEnd' | 'yEnd' | 'hline' | 'vline' | null
+  let calLastCoord = null;
+  let calStartCoord = null; // for click-vs-drag detection
+
+  canvas.addEventListener('mousedown', (e) => {
+    const ext = State.extraction;
+    if (!ext) return;
+    const c = canvasToImageCoord(canvas, e);
+    // Lasso mode mousedown
+    if (ext.interactionMode === 'lasso') {
+      lassoDragging = true;
+      ext.lasso = [c];
+      e.preventDefault();
+      return;
+    }
+    // Calibrate mode mousedown — start dragging a handle if we hit one
+    if (ext.interactionMode === 'calibrate') {
+      const f = ext.calibration.frame;
+      if (!f) return;
+      const hit = frameHitTest(f, c.x, c.y, 16);
+      if (hit) {
+        calDragging = hit;
+        calStartCoord = c;
+        calLastCoord = c;
+        f.selected = (hit === 'hline' || hit === 'vline') ? f.selected : hit;
+        canvas.style.cursor = 'grabbing';
+        updateCalibrationProgress();
+        drawExtractionCanvas();
+        e.preventDefault();
+      }
+      return;
+    }
+  });
 
   canvas.addEventListener('click', (e) => {
     if (lassoDragging) return; // drag-end already handled
     const ext = State.extraction;
     if (!ext) return;
+    // If we just finished a calibration drag, suppress the click
+    if (calStartCoord) {
+      const c = canvasToImageCoord(canvas, e);
+      const dx = c.x - calStartCoord.x, dy = c.y - calStartCoord.y;
+      calStartCoord = null;
+      if (dx*dx + dy*dy > 9) return; // it was a drag, not a click
+    }
     const c = canvasToImageCoord(canvas, e);
 
     if (ext.interactionMode === 'pick') {
-      // Click on chart: if user clicked on/near an existing traced point, just select that curve.
-      // Otherwise sample pixel color and trace the matching detected curve.
       const hit = findPointAt(c.x, c.y, 12);
       if (hit) {
         ext.activeCurveId = hit.curve.id;
@@ -2929,8 +3015,6 @@ function setupCanvasInteraction() {
         traceSingleCurve(curve);
       }
     } else if (ext.interactionMode === 'add') {
-      // Add a point at the click location to the active curve.
-      // If no active curve, try to detect one by colour at the click; otherwise warn.
       let curve = ext.curves.find(cu => cu.id === ext.activeCurveId);
       if (!curve) {
         const guess = findCurveAtPixel(c.x, c.y);
@@ -2942,21 +3026,17 @@ function setupCanvasInteraction() {
           return;
         }
       }
-      // Snap the point to the nearest matching-colour pixel within a small radius
-      // for clean placement; if nothing matches, just use the raw click.
       const snap = snapToColor(ext.canvas, c.x, c.y, curve.color, 12);
       const px = snap ? snap.x : c.x;
       const py = snap ? snap.y : c.y;
       curve.points.push({ px, py, manual: true });
-      // Keep points sorted by x for clean lines
       curve.points.sort((a, b) => a.px - b.px);
-      curve.traced = true; // count it as traced now
+      curve.traced = true;
       recomputeDataValues();
       renderCurvesList();
       drawExtractionCanvas();
       updateExtractStatus();
     } else if (ext.interactionMode === 'erase') {
-      // Find nearest traced point within radius and remove it
       const hit = findPointAt(c.x, c.y, 14);
       if (hit) {
         hit.curve.points.splice(hit.index, 1);
@@ -2967,45 +3047,76 @@ function setupCanvasInteraction() {
         toast('No point within reach', 'warn', 1500);
       }
     } else if (ext.interactionMode === 'calibrate') {
-      handleCalibrateClick(c);
+      // Click outside any handle: select the nearest handle for keyboard nudging
+      const f = ext.calibration.frame;
+      if (!f) return;
+      const candidates = ['origin', 'xEnd', 'yEnd'];
+      let best = null, bestD = Infinity;
+      candidates.forEach(k => {
+        const dx = f[k].x - c.x, dy = f[k].y - c.y;
+        const d = dx*dx + dy*dy;
+        if (d < bestD) { bestD = d; best = k; }
+      });
+      f.selected = best;
+      updateCalibrationProgress();
+      drawExtractionCanvas();
     }
   });
 
-  // Lasso (drag) for region erase
-  let lassoPath = null;
-  canvas.addEventListener('mousedown', (e) => {
-    const ext = State.extraction;
-    if (!ext || ext.interactionMode !== 'lasso') return;
-    lassoDragging = true;
-    lassoPath = [canvasToImageCoord(canvas, e)];
-    ext.lasso = lassoPath;
-    e.preventDefault();
-  });
   canvas.addEventListener('mousemove', (e) => {
     const ext = State.extraction;
     if (!ext) return;
+    const c = canvasToImageCoord(canvas, e);
+
+    // Calibration drag in progress
+    if (calDragging) {
+      const f = ext.calibration.frame;
+      if (!f) return;
+      const dx = c.x - calLastCoord.x;
+      const dy = c.y - calLastCoord.y;
+      moveFrameHandle(f, calDragging, dx, dy, ext.plotBox);
+      calLastCoord = c;
+      updateCalibrationProgress();
+      drawExtractionCanvas();
+      return;
+    }
+
     if (ext.interactionMode === 'lasso' && lassoDragging) {
-      lassoPath.push(canvasToImageCoord(canvas, e));
-      ext.lasso = lassoPath;
+      ext.lasso.push(c);
       drawExtractionCanvas();
     } else if (ext.interactionMode === 'pick' || ext.interactionMode === 'erase') {
-      // Hover preview: if hovering over a point, change cursor
-      const c = canvasToImageCoord(canvas, e);
       const hit = findPointAt(c.x, c.y, 12);
-      canvas.style.cursor = hit
-        ? (ext.interactionMode === 'erase' ? 'pointer' : 'pointer')
-        : (ext.interactionMode === 'erase' ? 'crosshair' : 'pointer');
+      canvas.style.cursor = hit ? 'pointer' :
+        (ext.interactionMode === 'erase' ? 'crosshair' : 'pointer');
+    } else if (ext.interactionMode === 'calibrate') {
+      // Hover cursor changes when over a handle
+      const f = ext.calibration.frame;
+      if (f) {
+        const hit = frameHitTest(f, c.x, c.y, 16);
+        canvas.style.cursor = hit
+          ? (hit === 'hline' || hit === 'vline' ? 'move' : 'grab')
+          : 'crosshair';
+      }
     }
   });
+
   window.addEventListener('mouseup', (e) => {
     const ext = State.extraction;
     if (!ext) return;
+    // End calibration drag
+    if (calDragging) {
+      calDragging = null;
+      calLastCoord = null;
+      canvas.style.cursor = 'crosshair';
+      updateCalibrationProgress();
+      drawExtractionCanvas();
+      return;
+    }
     if (ext.interactionMode === 'lasso' && lassoDragging) {
       lassoDragging = false;
       const path = ext.lasso;
       ext.lasso = null;
       if (path && path.length > 3) {
-        // Remove all points inside polygon (across all enabled traced curves)
         let removed = 0;
         ext.curves.forEach(curve => {
           if (!curve.enabled || !curve.traced) return;
@@ -3020,21 +3131,43 @@ function setupCanvasInteraction() {
       } else {
         drawExtractionCanvas();
       }
-      // Don't fire the click handler too
       setTimeout(() => { lassoDragging = false; }, 50);
     }
   });
 
-  // Keyboard: 1=pick, 2=erase, 3=lasso, Backspace removes nearest to cursor
+  // Keyboard: 1-5 mode switch + arrow nudge for selected calibration handle
   document.addEventListener('keydown', (e) => {
     if (!State.extraction) return;
     if ($('#stage-extract').classList.contains('hidden')) return;
     const tag = (document.activeElement?.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea') return;
-    if (e.key === '1') { State.extraction.interactionMode = 'pick'; drawExtractionCanvas(); }
-    else if (e.key === '2') { State.extraction.interactionMode = 'add'; drawExtractionCanvas(); }
-    else if (e.key === '3') { State.extraction.interactionMode = 'erase'; drawExtractionCanvas(); }
-    else if (e.key === '4') { State.extraction.interactionMode = 'lasso'; drawExtractionCanvas(); }
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    const ext = State.extraction;
+    if (e.key === '1') { ext.interactionMode = 'pick'; drawExtractionCanvas(); }
+    else if (e.key === '2') { ext.interactionMode = 'add'; drawExtractionCanvas(); }
+    else if (e.key === '3') { ext.interactionMode = 'erase'; drawExtractionCanvas(); }
+    else if (e.key === '4') { ext.interactionMode = 'lasso'; drawExtractionCanvas(); }
+    else if (e.key === '5') {
+      ext.interactionMode = 'calibrate';
+      if (!ext.calibration.frame) ext.calibration.frame = defaultFrameForBox(ext.plotBox);
+      $('#calibrate-progress').style.display = 'block';
+      $('#calibrate-values').style.display = 'block';
+      updateCalibrationProgress();
+      drawExtractionCanvas();
+    } else if (ext.interactionMode === 'calibrate' &&
+               ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+      const f = ext.calibration.frame;
+      if (!f || !f.selected) return;
+      e.preventDefault();
+      const step = e.shiftKey ? 5 : 1;
+      let dx = 0, dy = 0;
+      if (e.key === 'ArrowLeft') dx = -step;
+      else if (e.key === 'ArrowRight') dx = step;
+      else if (e.key === 'ArrowUp') dy = -step;
+      else if (e.key === 'ArrowDown') dy = step;
+      moveFrameHandle(f, f.selected, dx, dy, ext.plotBox);
+      updateCalibrationProgress();
+      drawExtractionCanvas();
+    }
   });
 }
 
@@ -3050,121 +3183,363 @@ function applyAxisInputs() {
   ext.calibration.yMax = parseFloat($('#ax-ymax').value);
   ext.calibration.xLog = $('#ax-xlog').checked;
   ext.calibration.yLog = $('#ax-ylog').checked;
-  // Edge-based recompute clears manual calibration
-  if (ext.calibration.manual) ext.calibration.manual = null;
+  // Edge-based recompute deactivates the axis-frame calibration so the inputs
+  // become the source of truth. The frame stays in memory in case the user
+  // wants to come back to it, but it's marked as not-applied.
+  if (ext.calibration.frame) ext.calibration.frame.applied = false;
   recomputeDataValues();
   toast('Recomputed with edge values', 'ok');
 }
 
-// ---- Manual 4-point axis calibration ----
+// =====================================================================
+// AXIS-FRAME CALIBRATION
+// =====================================================================
+// Three draggable handles in pixel space:
+//    origin  — sits at the (0,0) crossing of the user's axes
+//    xEnd    — somewhere along the X axis at a known X value
+//    yEnd    — somewhere along the Y axis at a known Y value
+// The horizontal line is rendered from origin to (xEnd.x, origin.y) — i.e. perfectly
+// horizontal at the origin's y-pixel — so even if the user lets the X-end handle
+// drift up or down it visually stays on the same horizontal as the origin.
+// (We allow the underlying handle position to be anywhere; the drawn line is what
+// the user sees. The math projects onto the X axis using only x-coordinates.)
+//
+// The user enters: origin X & Y values, plus X-end and Y-end values. They can
+// optionally check log-scale per axis. Apply derives the equivalent xMin/xMax/
+// yMin/yMax so the existing recompute path continues to work.
+// =====================================================================
+
+function getOrInitFrame() {
+  const ext = State.extraction;
+  if (!ext) return null;
+  if (!ext.calibration.frame) ext.calibration.frame = null;
+  return ext.calibration.frame;
+}
+
+function defaultFrameForBox(plotBox) {
+  // Place a sensible starting frame: origin at bottom-left of detected plot box,
+  // X-end at bottom-right, Y-end at top-left. User then nudges into place.
+  return {
+    origin: { x: plotBox.left, y: plotBox.bottom },
+    xEnd:   { x: plotBox.right, y: plotBox.bottom },
+    yEnd:   { x: plotBox.left,  y: plotBox.top },
+    selected: 'origin', // which handle has keyboard focus
+    applied: false,     // becomes true once user clicks "Apply"
+    originXVal: NaN, originYVal: NaN, xEndVal: NaN, yEndVal: NaN,
+  };
+}
+
+// Hit-test: which handle (if any) is at (cx, cy) in image-pixel coords?
+// Order matters — handles overlap when the frame is collapsed, so test small
+// terminal handles before large ones.
+function frameHitTest(frame, cx, cy, radius = 14) {
+  if (!frame) return null;
+  const r2 = radius * radius;
+  const order = ['xEnd', 'yEnd', 'origin']; // end-handles win over origin if overlapping
+  for (const key of order) {
+    const h = frame[key];
+    const dx = h.x - cx, dy = h.y - cy;
+    if (dx*dx + dy*dy <= r2) return key;
+  }
+  // Also test "anywhere along the rendered horizontal/vertical line" so the user
+  // can grab a line itself (not just an endpoint) to slide it.
+  const lineHit = 6;
+  // Horizontal line: y == origin.y, x ∈ [origin.x, xEnd.x]
+  const hx0 = Math.min(frame.origin.x, frame.xEnd.x);
+  const hx1 = Math.max(frame.origin.x, frame.xEnd.x);
+  if (cx >= hx0 && cx <= hx1 && Math.abs(cy - frame.origin.y) <= lineHit) return 'hline';
+  // Vertical line: x == origin.x, y ∈ [origin.y, yEnd.y]
+  const vy0 = Math.min(frame.origin.y, frame.yEnd.y);
+  const vy1 = Math.max(frame.origin.y, frame.yEnd.y);
+  if (cy >= vy0 && cy <= vy1 && Math.abs(cx - frame.origin.x) <= lineHit) return 'vline';
+  return null;
+}
+
+function moveFrameHandle(frame, key, dx, dy, plotBox) {
+  // Edge clamp: keep handles within image bounds (slightly outside plotBox is OK)
+  const ext = State.extraction;
+  if (!ext) return;
+  const W = ext.image.width, H = ext.image.height;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  if (key === 'origin') {
+    // Move the whole frame: drag origin AND keep xEnd, yEnd at their relative offsets
+    const ox0 = frame.origin.x, oy0 = frame.origin.y;
+    frame.origin.x = clamp(ox0 + dx, 0, W);
+    frame.origin.y = clamp(oy0 + dy, 0, H);
+    const ax = frame.origin.x - ox0;
+    const ay = frame.origin.y - oy0;
+    frame.xEnd.x = clamp(frame.xEnd.x + ax, 0, W);
+    frame.xEnd.y = clamp(frame.xEnd.y + ay, 0, H);
+    frame.yEnd.x = clamp(frame.yEnd.x + ax, 0, W);
+    frame.yEnd.y = clamp(frame.yEnd.y + ay, 0, H);
+  } else if (key === 'xEnd') {
+    // Free move (only the X coordinate matters mathematically; we keep Y for visuals)
+    frame.xEnd.x = clamp(frame.xEnd.x + dx, 0, W);
+    frame.xEnd.y = clamp(frame.xEnd.y + dy, 0, H);
+  } else if (key === 'yEnd') {
+    frame.yEnd.x = clamp(frame.yEnd.x + dx, 0, W);
+    frame.yEnd.y = clamp(frame.yEnd.y + dy, 0, H);
+  } else if (key === 'hline') {
+    // Slide the entire horizontal line up/down (changes origin.y for both lines'
+    // shared baseline). We only change Y, keep X positions.
+    frame.origin.y = clamp(frame.origin.y + dy, 0, H);
+    // The horizontal line is rendered from origin to (xEnd.x, origin.y), so we
+    // don't need to touch xEnd's Y; the drawn line follows origin.y automatically.
+  } else if (key === 'vline') {
+    // Slide entire vertical line left/right (changes origin.x).
+    frame.origin.x = clamp(frame.origin.x + dx, 0, W);
+  }
+}
+
+function setFrameHandle(frame, key, x, y) {
+  // Snap a handle to an exact pixel position
+  if (key === 'origin' || key === 'xEnd' || key === 'yEnd') {
+    frame[key].x = x;
+    frame[key].y = y;
+  }
+}
+
+function drawAxisFrame(ctx, frame, ext) {
+  const isCalMode = ext.interactionMode === 'calibrate';
+  const ox = frame.origin.x, oy = frame.origin.y;
+  // Drawn lines: horizontal at origin.y from origin.x → xEnd.x; vertical at
+  // origin.x from origin.y → yEnd.y. This visually enforces perpendicularity
+  // even if the underlying xEnd/yEnd handles drifted slightly off-axis.
+  const hxEnd = frame.xEnd.x;
+  const vyEnd = frame.yEnd.y;
+
+  // Faded extension lines (thin, dashed, full image extent) so the user can see
+  // alignment with axes that are far from the handles
+  if (isCalMode) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(74, 107, 138, 0.18)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(0, oy); ctx.lineTo(ext.image.width, oy);
+    ctx.moveTo(ox, 0); ctx.lineTo(ox, ext.image.height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Main lines — semi-transparent so the underlying axis stays visible.
+  // We draw each line as a 1-pixel ink core plus a wider translucent halo so the
+  // line is visible against any background without hiding the chart underneath.
+  ctx.save();
+  ctx.lineCap = 'round';
+  // Horizontal (X axis indicator)
+  // Wide soft halo
+  ctx.strokeStyle = 'rgba(180, 68, 31, 0.18)';
+  ctx.lineWidth = isCalMode ? 6 : 4;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy); ctx.lineTo(hxEnd, oy); ctx.stroke();
+  // Crisp 1-px core line
+  ctx.strokeStyle = 'rgba(180, 68, 31, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy); ctx.lineTo(hxEnd, oy); ctx.stroke();
+  // Vertical (Y axis indicator)
+  ctx.strokeStyle = 'rgba(74, 107, 138, 0.18)';
+  ctx.lineWidth = isCalMode ? 6 : 4;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy); ctx.lineTo(ox, vyEnd); ctx.stroke();
+  ctx.strokeStyle = 'rgba(74, 107, 138, 0.9)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy); ctx.lineTo(ox, vyEnd); ctx.stroke();
+  ctx.restore();
+
+  // Handles — open / see-through so the user can see the underlying pixel they
+  // are aiming at. A short opaque tick at the exact handle point shows precision
+  // without covering it.
+  const drawHandle = (x, y, kind, color, label) => {
+    const isSel = frame.selected === kind;
+    const r = isSel ? 13 : 10;            // outer ring radius
+    const innerR = isSel ? 4 : 3;         // inner gap radius (kept clear)
+    ctx.save();
+    if (kind === 'origin') {
+      // Open square (no fill) so the corner of the axes shows through
+      const s = isSel ? 11 : 9;
+      // Outer translucent halo to make it visible on busy backgrounds
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = isSel ? 5 : 4;
+      ctx.strokeRect(x - s, y - s, s*2, s*2);
+      // The actual outline
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isSel ? 2.5 : 2;
+      ctx.strokeRect(x - s, y - s, s*2, s*2);
+      // 4 short tick stubs pointing inward — show the precise center without
+      // covering it. The very center pixel (the origin) stays pristine.
+      ctx.beginPath();
+      ctx.moveTo(x - s, y); ctx.lineTo(x - innerR, y);
+      ctx.moveTo(x + innerR, y); ctx.lineTo(x + s, y);
+      ctx.moveTo(x, y - s); ctx.lineTo(x, y - innerR);
+      ctx.moveTo(x, y + innerR); ctx.lineTo(x, y + s);
+      ctx.stroke();
+      // Tiny center dot (1 px) — precise pointer
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
+    } else {
+      // Open circle (no fill) for end handles — see right through to the tick
+      // White halo so the ring is visible against the chart
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+      ctx.lineWidth = isSel ? 5 : 4;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+      // Coloured ring
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isSel ? 2.5 : 2;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+      // 4 internal tick stubs (cross hair) leaving the center pixel clear
+      ctx.beginPath();
+      ctx.moveTo(x - r, y); ctx.lineTo(x - innerR, y);
+      ctx.moveTo(x + innerR, y); ctx.lineTo(x + r, y);
+      ctx.moveTo(x, y - r); ctx.lineTo(x, y - innerR);
+      ctx.moveTo(x, y + innerR); ctx.lineTo(x, y + r);
+      ctx.stroke();
+      // 1-px center dot
+      ctx.fillStyle = color;
+      ctx.fillRect(x - 0.5, y - 0.5, 1, 1);
+    }
+    // Label tag — only when in calibrate mode AND selected, and offset away
+    // from the handle so it doesn't cover the chart near the alignment point.
+    if (isCalMode && isSel) {
+      ctx.font = 'bold 11px JetBrains Mono';
+      const tw = ctx.measureText(label).width;
+      const tagX = x + r + 6;
+      const tagY = y - 8;
+      // semi-transparent background
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.85;
+      ctx.fillRect(tagX, tagY, tw + 8, 16);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, tagX + 4, tagY + 11);
+    }
+    ctx.restore();
+  };
+  drawHandle(ox, oy, 'origin', '#2d5e3e', 'Origin');
+  drawHandle(hxEnd, oy, 'xEnd', '#b4441f', 'X-end');
+  drawHandle(ox, vyEnd, 'yEnd', '#4a6b8a', 'Y-end');
+}
+
 function startCalibration() {
   const ext = State.extraction;
   if (!ext) return;
-  ext.calibration.manual = { step: 0, x1Px: null, x2Px: null, y1Px: null, y2Px: null,
-                              x1Val: NaN, x2Val: NaN, y1Val: NaN, y2Val: NaN };
+  // Initialize a fresh frame from the detected plot box if none yet
+  if (!ext.calibration.frame) {
+    ext.calibration.frame = defaultFrameForBox(ext.plotBox);
+  }
   ext.interactionMode = 'calibrate';
-  updateCalibrationProgress();
   $('#calibrate-progress').style.display = 'block';
-  $('#calibrate-values').style.display = 'none';
+  $('#calibrate-values').style.display = 'block';
+  // Pre-fill values where reasonable
+  if (isNaN(ext.calibration.frame.xEndVal) && !isNaN(ext.calibration.xMax)) {
+    $('#cal-xend').value = formatNum(ext.calibration.xMax);
+  }
+  if (isNaN(ext.calibration.frame.yEndVal) && !isNaN(ext.calibration.yMax)) {
+    $('#cal-yend').value = formatNum(ext.calibration.yMax);
+  }
+  $('#cal-xlog').checked = !!ext.calibration.xLog;
+  $('#cal-ylog').checked = !!ext.calibration.yLog;
+  updateCalibrationProgress();
   drawExtractionCanvas();
-  toast('Click point X1 — a known value on the X-axis (e.g. the leftmost tick)', 'ok', 5000);
+  toast('Drag the handles into place, then enter the values below', 'ok', 4500);
 }
 
-function handleCalibrateClick(coord) {
+function snapCalibrationToBox() {
   const ext = State.extraction;
-  const m = ext.calibration.manual;
-  if (!m) return;
-  if (m.step === 0) { m.x1Px = { x: coord.x, y: coord.y }; m.step = 1; toast('Click point X2 — another known X-axis value (e.g. rightmost tick)', 'ok', 5000); }
-  else if (m.step === 1) { m.x2Px = { x: coord.x, y: coord.y }; m.step = 2; toast('Click point Y1 — a known value on the Y-axis (e.g. bottom tick)', 'ok', 5000); }
-  else if (m.step === 2) { m.y1Px = { x: coord.x, y: coord.y }; m.step = 3; toast('Click point Y2 — another known Y-axis value (e.g. top tick)', 'ok', 5000); }
-  else if (m.step === 3) {
-    m.y2Px = { x: coord.x, y: coord.y };
-    m.step = 4;
-    ext.interactionMode = 'pick';
-    $('#calibrate-values').style.display = 'block';
-    toast('All 4 reference points set. Now type their values and click Apply.', 'ok', 6000);
-  }
+  if (!ext) return;
+  ext.calibration.frame = defaultFrameForBox(ext.plotBox);
+  ext.interactionMode = 'calibrate';
+  $('#calibrate-progress').style.display = 'block';
+  $('#calibrate-values').style.display = 'block';
+  $('#cal-xlog').checked = !!ext.calibration.xLog;
+  $('#cal-ylog').checked = !!ext.calibration.yLog;
   updateCalibrationProgress();
   drawExtractionCanvas();
+  toast('Frame snapped to detected plot box — adjust the handles', 'ok');
 }
 
 function updateCalibrationProgress() {
-  const m = State.extraction?.calibration?.manual;
+  const f = State.extraction?.calibration?.frame;
   const el = $('#calibrate-progress');
-  if (!el) return;
-  if (!m) { el.style.display = 'none'; return; }
-  const labels = ['X1', 'X2', 'Y1', 'Y2'];
-  const next = labels[m.step] || 'Done';
-  let txt = '';
-  for (let i = 0; i < 4; i++) {
-    const done = i < m.step;
-    const active = i === m.step;
-    txt += `<span style="color:${done ? 'var(--accent-2)' : active ? 'var(--accent)' : 'var(--ink-3)'}; font-weight:${active ? 700 : 400}; margin-right: 8px;">${done ? '✓' : active ? '→' : '·'} ${labels[i]}</span>`;
-  }
-  if (m.step >= 4) txt += '<br><span style="color:var(--accent-2); font-weight:700;">Now enter the values below ↓</span>';
-  else txt += `<br><span style="color:var(--ink-2); font-size: 11px;">Click point <strong>${next}</strong> on the chart</span>`;
-  el.innerHTML = txt;
+  if (!el || !f) { if (el) el.style.display = 'none'; return; }
+  el.innerHTML = `
+    <div><strong style="color:var(--accent-2)">⬛ Origin</strong> at pixel
+      (${Math.round(f.origin.x)}, ${Math.round(f.origin.y)})</div>
+    <div><strong style="color:var(--accent)">● X-end</strong> at pixel x =
+      ${Math.round(f.xEnd.x)} (Δx = ${Math.round(f.xEnd.x - f.origin.x)} px)</div>
+    <div><strong style="color:var(--accent-3)">● Y-end</strong> at pixel y =
+      ${Math.round(f.yEnd.y)} (Δy = ${Math.round(f.yEnd.y - f.origin.y)} px)</div>
+    <div style="margin-top: 6px; color: var(--ink-3);">Selected handle:
+      <strong>${f.selected || '—'}</strong> — drag with mouse or nudge with arrow keys</div>
+  `;
 }
 
 function applyCalibration() {
   const ext = State.extraction;
-  const m = ext?.calibration?.manual;
-  if (!m || m.step < 4) {
-    toast('Set all 4 reference points first', 'warn');
-    return;
+  const f = ext?.calibration?.frame;
+  if (!f) { toast('Show the frame first, then Apply', 'warn'); return; }
+  const ox = parseFloat($('#cal-ox').value);
+  const oy = parseFloat($('#cal-oy').value);
+  const xe = parseFloat($('#cal-xend').value);
+  const ye = parseFloat($('#cal-yend').value);
+  if ([ox, oy, xe, ye].some(v => isNaN(v))) {
+    toast('Fill in all four values (origin X/Y and X-end/Y-end)', 'warn'); return;
   }
-  const x1v = parseFloat($('#cal-x1v').value);
-  const x2v = parseFloat($('#cal-x2v').value);
-  const y1v = parseFloat($('#cal-y1v').value);
-  const y2v = parseFloat($('#cal-y2v').value);
-  if ([x1v, x2v, y1v, y2v].some(isNaN)) {
-    toast('Fill in all four values', 'warn');
-    return;
+  if (ox === xe || oy === ye) {
+    toast('Origin and end values must differ on each axis', 'warn'); return;
   }
-  if (x1v === x2v || y1v === y2v) {
-    toast('X1 must differ from X2, and Y1 must differ from Y2', 'warn');
-    return;
+  if (Math.abs(f.xEnd.x - f.origin.x) < 5 || Math.abs(f.yEnd.y - f.origin.y) < 5) {
+    toast('Lines too short — drag the X-end / Y-end handles further from the origin', 'warn'); return;
   }
-  m.x1Val = x1v; m.x2Val = x2v; m.y1Val = y1v; m.y2Val = y2v;
-
-  // Derive the equivalent edge-based xMin/xMax/yMin/yMax values from the manual calibration,
-  // so the status panel reads the right numbers and the edge fields aren't misleading.
-  // Compute what value sits at plotBox.left and plotBox.right (and top/bottom) using the
-  // same linear interpolation from the calibration reference points.
+  const xLog = $('#cal-xlog').checked;
+  const yLog = $('#cal-ylog').checked;
+  if ((xLog && (ox <= 0 || xe <= 0)) || (yLog && (oy <= 0 || ye <= 0))) {
+    toast('Log scale needs strictly positive values', 'warn'); return;
+  }
+  f.originXVal = ox; f.originYVal = oy;
+  f.xEndVal = xe; f.yEndVal = ye;
+  f.applied = true;
+  ext.calibration.xLog = xLog;
+  ext.calibration.yLog = yLog;
+  // Derive equivalent edge-based values so the side panel reads correctly and
+  // the values are self-consistent if the user later switches to edge-based mode.
   const interp = (px, p1, v1, p2, v2, log) => {
-    const f = (px - p1) / (p2 - p1);
+    if (p1 === p2) return v1;
+    const f2 = (px - p1) / (p2 - p1);
     if (log) {
       const l1 = Math.log10(v1), l2 = Math.log10(v2);
-      return Math.pow(10, l1 + f * (l2 - l1));
+      return Math.pow(10, l1 + f2 * (l2 - l1));
     }
-    return v1 + f * (v2 - v1);
+    return v1 + f2 * (v2 - v1);
   };
-  ext.calibration.xMin = interp(ext.plotBox.left, m.x1Px.x, m.x1Val, m.x2Px.x, m.x2Val, ext.calibration.xLog);
-  ext.calibration.xMax = interp(ext.plotBox.right, m.x1Px.x, m.x1Val, m.x2Px.x, m.x2Val, ext.calibration.xLog);
-  // Y axis flip: pixel y increases downward, but calibration y2 is "above" y1 typically.
-  ext.calibration.yMin = interp(ext.plotBox.bottom, m.y1Px.y, m.y1Val, m.y2Px.y, m.y2Val, ext.calibration.yLog);
-  ext.calibration.yMax = interp(ext.plotBox.top, m.y1Px.y, m.y1Val, m.y2Px.y, m.y2Val, ext.calibration.yLog);
-
+  ext.calibration.xMin = interp(ext.plotBox.left, f.origin.x, ox, f.xEnd.x, xe, xLog);
+  ext.calibration.xMax = interp(ext.plotBox.right, f.origin.x, ox, f.xEnd.x, xe, xLog);
+  ext.calibration.yMin = interp(ext.plotBox.bottom, f.origin.y, oy, f.yEnd.y, ye, yLog);
+  ext.calibration.yMax = interp(ext.plotBox.top, f.origin.y, oy, f.yEnd.y, ye, yLog);
   recomputeDataValues();
-  // Refresh side panel inputs and status display
   $('#ax-xmin').value = formatNum(ext.calibration.xMin);
   $('#ax-xmax').value = formatNum(ext.calibration.xMax);
   $('#ax-ymin').value = formatNum(ext.calibration.yMin);
   $('#ax-ymax').value = formatNum(ext.calibration.yMax);
+  $('#ax-xlog').checked = xLog;
+  $('#ax-ylog').checked = yLog;
+  ext.interactionMode = 'pick';
   renderExtraction();
-  toast(`Calibration applied · curves now span x∈[${formatNum(ext.calibration.xMin)}, ${formatNum(ext.calibration.xMax)}], y∈[${formatNum(ext.calibration.yMin)}, ${formatNum(ext.calibration.yMax)}]`, 'ok', 6000);
+  toast(`Calibration applied · X∈[${formatNum(ox)}, ${formatNum(xe)}] · Y∈[${formatNum(oy)}, ${formatNum(ye)}]`, 'ok', 5000);
 }
 
 function clearCalibration() {
   const ext = State.extraction;
   if (!ext) return;
-  ext.calibration.manual = null;
+  ext.calibration.frame = null;
   ext.interactionMode = 'pick';
   $('#calibrate-progress').style.display = 'none';
   $('#calibrate-values').style.display = 'none';
   recomputeDataValues();
   drawExtractionCanvas();
-  toast('Manual calibration cleared · using edge values', 'ok');
+  toast('Calibration cleared · using edge values', 'ok');
 }
 
 // -------------------- EXPORT --------------------
@@ -3341,8 +3716,9 @@ function init() {
     });
   });
 
-  // Manual calibration
+  // Manual calibration (axis-frame)
   $('#btn-start-calibrate').addEventListener('click', startCalibration);
+  $('#btn-snap-calibrate').addEventListener('click', snapCalibrationToBox);
   $('#btn-apply-calibrate').addEventListener('click', applyCalibration);
   $('#btn-clear-calibrate').addEventListener('click', clearCalibration);
 
@@ -3407,15 +3783,26 @@ function init() {
   $$('#mode-bar button').forEach(b => {
     b.addEventListener('click', () => {
       if (!State.extraction) return;
-      State.extraction.interactionMode = b.dataset.mode;
+      const mode = b.dataset.mode;
+      State.extraction.interactionMode = mode;
       const hints = {
         pick: 'Click any curve on the chart to extract it (or pick from the side panel)',
         add: 'Click on a curve to add a single point at that exact location · Snaps to the curve colour',
         erase: 'Click a stray point to delete it · Hover shows a pointer when one is in reach',
         lasso: 'Drag around stray points to delete them all in one go',
-        calibrate: 'Click 4 reference points on the chart in order: X1, X2, Y1, Y2',
+        calibrate: 'Drag the ⬛ origin, ● X-end and ● Y-end handles into place · Then enter values & Apply',
       };
-      $('#mode-hint').textContent = hints[b.dataset.mode];
+      $('#mode-hint').textContent = hints[mode];
+      // Auto-open the calibration UI when switching into calibrate mode
+      if (mode === 'calibrate') {
+        const ext = State.extraction;
+        if (!ext.calibration.frame) {
+          ext.calibration.frame = defaultFrameForBox(ext.plotBox);
+        }
+        $('#calibrate-progress').style.display = 'block';
+        $('#calibrate-values').style.display = 'block';
+        updateCalibrationProgress();
+      }
       drawExtractionCanvas();
     });
   });
